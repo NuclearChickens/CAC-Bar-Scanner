@@ -1,6 +1,7 @@
 """Persistent audit log of drinks-reset events.
 
-Stores one JSON record per reset in ``~/.cac_scanner/resets.jsonl``:
+Stores one JSON record per reset under the shared data directory
+(see ``settings.SETTINGS_DIR``) as ``resets.jsonl``:
 
     {"ts": "2026-05-13T14:22:08.123456+00:00",
      "edipi1": "1234567890",
@@ -14,10 +15,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterable
 
-LOG_DIR = Path.home() / ".cac_scanner"
+from settings import SETTINGS_DIR as LOG_DIR
+
 LOG_FILE = LOG_DIR / "resets.jsonl"
 
 

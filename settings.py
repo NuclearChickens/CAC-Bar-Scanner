@@ -1,12 +1,23 @@
 """Persistent app settings and eligibility check.
 
-Saved to ``~/.cac_scanner/settings.json``. The schema is forward-compatible:
-unknown keys are ignored; missing keys fall back to defaults so older save
-files load cleanly when new fields are added.
+Storage location:
+    * Windows: ``C:\\Users\\Public\\CACBarScanner\\`` — every user on
+      the kiosk machine sees the same configuration, ban list, and
+      scan history. The Public profile grants Authenticated Users
+      Modify access by default, so this works without admin rights.
+    * Linux/macOS: ``~/.cac_scanner/`` — kiosk deployment is Windows-
+      only and there is no good cross-user shared location without root.
+
+The schema is forward-compatible: unknown keys are ignored; missing
+keys fall back to defaults so older save files load cleanly when new
+fields are added.
 """
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import sys
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
@@ -14,8 +25,52 @@ from typing import Any, Tuple
 
 from cac_decoder import BRANCHES, CATEGORIES
 
-SETTINGS_DIR = Path.home() / ".cac_scanner"
+
+def _default_data_dir() -> Path:
+    if sys.platform == "win32":
+        public = os.environ.get("PUBLIC", r"C:\Users\Public")
+        return Path(public) / "CACBarScanner"
+    return Path.home() / ".cac_scanner"
+
+
+SETTINGS_DIR = _default_data_dir()
 SETTINGS_FILE = SETTINGS_DIR / "settings.json"
+
+# Where data lived before the move to a shared directory. On Windows
+# this is the legacy per-user location; on other platforms it equals
+# SETTINGS_DIR and migration is a no-op.
+LEGACY_DATA_DIR = Path.home() / ".cac_scanner"
+
+
+def migrate_legacy_data() -> None:
+    """Copy data from the per-user legacy directory into SETTINGS_DIR
+    on first launch after upgrading to shared storage.
+
+    Idempotent: skips when SETTINGS_DIR already has data, when the
+    legacy directory doesn't exist, or when source and destination are
+    the same path (Linux/macOS). The legacy directory is left in place
+    so a rollback is possible if anything goes wrong."""
+    if SETTINGS_DIR.resolve() == LEGACY_DATA_DIR.resolve():
+        return
+    if not LEGACY_DATA_DIR.exists():
+        return
+    if SETTINGS_FILE.exists():
+        return  # Already migrated, or fresh install in the new location.
+    try:
+        SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    for item in LEGACY_DATA_DIR.iterdir():
+        if not item.is_file():
+            continue
+        dest = SETTINGS_DIR / item.name
+        if dest.exists():
+            continue
+        try:
+            shutil.copy2(item, dest)
+        except OSError:
+            # Best-effort — a single failed copy shouldn't block the rest.
+            continue
 
 DEFAULT_OPEN = "00:00"
 DEFAULT_CLOSE = "00:00"  # open == close => 24-hour rolling window

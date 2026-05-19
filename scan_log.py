@@ -1,6 +1,7 @@
 """Persistent per-EDIPI scan log shared across runs.
 
-Stores one JSON record per scan in ``~/.cac_scanner/scans.jsonl``:
+Stores one JSON record per scan under the shared data directory
+(see ``settings.SETTINGS_DIR``) as ``scans.jsonl``:
 
     {"edipi": "1234567890", "ts": "2026-05-13T14:22:08.123456+00:00"}
 
@@ -11,10 +12,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import Iterable
 
-LOG_DIR = Path.home() / ".cac_scanner"
+from settings import SETTINGS_DIR as LOG_DIR
+
 LOG_FILE = LOG_DIR / "scans.jsonl"
 
 

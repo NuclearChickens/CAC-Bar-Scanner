@@ -1459,6 +1459,8 @@ class App(tk.Tk):
             text=(
                 "Settings, ban list, and all logs live in:\n"
                 f"    {settings_mod.SETTINGS_DIR}\n"
+                "This folder is shared across every user on this PC, so all\n"
+                "operators see the same configuration and scan history.\n"
                 "Updating BarScanner does NOT touch this folder, so your\n"
                 "configuration is preserved automatically across upgrades.\n"
                 "Use the buttons below to back up or migrate to another machine."
@@ -1986,6 +1988,9 @@ def main() -> None:
     # Start menu shortcut, do that and exit without bringing up the GUI.
     if start_menu.handle_elevated_install_cli():
         return
+    # One-shot migration from ~/.cac_scanner/ to the shared data dir.
+    # No-op on Linux/macOS and on second+ launches.
+    settings_mod.migrate_legacy_data()
     _enable_windows_dpi_awareness()
     App().mainloop()
 

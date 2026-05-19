@@ -1,6 +1,7 @@
 """Persistent audit log of settings activity.
 
-Stores one JSON record per event in ``~/.cac_scanner/audit.jsonl``:
+Stores one JSON record per event under the shared data directory
+(see ``settings.SETTINGS_DIR``) as ``audit.jsonl``:
 
     {"ts": "...", "action": "unlock", "authorizers": ["1234567890", "..."]}
     {"ts": "...", "action": "change", "authorizers": [...], "change": "max_drinks: 3 → 5"}
@@ -13,10 +14,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Iterator, Sequence
 
-LOG_DIR = Path.home() / ".cac_scanner"
+from settings import SETTINGS_DIR as LOG_DIR
+
 LOG_FILE = LOG_DIR / "audit.jsonl"
 
 
