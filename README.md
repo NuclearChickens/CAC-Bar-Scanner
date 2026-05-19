@@ -55,12 +55,6 @@ docker compose up -d            # boots Windows, installs Python+PyInstaller
 ./build.sh                      # RDPs in, runs pyinstaller, drops dist/BarScanner.exe
 ```
 
-## Documentation
-
-- `GUIDE.pdf` — end-user operator guide (screenshots in `guide_assets/`)
-- `SOP.pdf` — standard operating procedure
-- `DECODING.pdf` — reference: the CAC Code 39 barcode layout this app parses
-
 ## Source layout
 
 | File             | Role                                                  |
