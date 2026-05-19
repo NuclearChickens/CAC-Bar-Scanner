@@ -40,11 +40,20 @@ On a Windows machine, install Python 3.12 from
 PATH** in the installer. Open a fresh Command Prompt (so it picks up the
 new PATH), `cd` into a clone of this repo, then run
 `pip install pyinstaller` followed by
-`pyinstaller --onefile --windowed --name BarScanner --clean --noconfirm cac_gui.py`.
-The finished binary lands at `dist\BarScanner.exe` — copy it anywhere and
-double-click. No virtualenv needed; the GUI has no third-party deps, so
-PyInstaller is the only pip install required. Tk ships with the standard
-python.org installer, so there's nothing extra to add for the GUI itself.
+`pyinstaller --clean --noconfirm BarScanner.spec`.
+The finished binary lands at `dist\BarScanner.exe` with the bottle-and-CAC
+icon baked in — copy it anywhere and double-click. No virtualenv needed;
+the GUI has no third-party deps, so PyInstaller is the only pip install
+required. Tk ships with the standard python.org installer, so there's
+nothing extra to add for the GUI itself.
+
+### Regenerating the icon
+
+`icon.ico` at the repo root is the multi-resolution icon embedded in
+the exe. It's built from `icon_assets/icon.svg` via
+`icon_assets/build_icon.sh`, which uses `rsvg-convert` (librsvg) and
+ImageMagick. Edit the SVG, re-run the script, commit both, rebuild
+the exe.
 
 ## Source layout
 
@@ -57,4 +66,7 @@ python.org installer, so there's nothing extra to add for the GUI itself.
 | `audit_log.py`   | Append-only audit trail of admin actions              |
 | `reset_log.py`   | Periodic log rollover                                 |
 | `backup.py`      | Settings + log backup/restore                         |
-| `BarScanner.spec`| PyInstaller spec (single-file, windowed)              |
+| `start_menu.py`  | First-launch admin install (ProgramData ACL + shortcut) |
+| `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon-embedded) |
+| `icon.ico`       | Multi-res Windows icon embedded in the exe            |
+| `icon_assets/`   | SVG source and rebuild script for `icon.ico`          |

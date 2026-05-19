@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <!-- Designed to read at every size from 256 down to 16. The two
+       primary silhouettes (rounded card + capped bottle) stay visible
+       even when detail melts away. -->
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#1c2738"/>
+      <stop offset="1"   stop-color="#0e1622"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#3aa094"/>
+      <stop offset="1"   stop-color="#1f6d63"/>
+    </linearGradient>
+    <linearGradient id="bottleBody" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"   stop-color="#3a1a08"/>
+      <stop offset="0.5" stop-color="#8a4a1f"/>
+      <stop offset="1"   stop-color="#3a1a08"/>
+    </linearGradient>
+    <linearGradient id="cap" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"   stop-color="#e74c3c"/>
+      <stop offset="1"   stop-color="#8e2018"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded-square icon backdrop -->
+  <rect x="0" y="0" width="256" height="256" rx="44" ry="44" fill="url(#bg)"/>
+
+  <!-- ============================== CAC card (rotated, behind) -->
+  <g transform="translate(140 138) rotate(-10)">
+    <!-- Card body -->
+    <rect x="-100" y="-62" width="200" height="124" rx="14" ry="14"
+          fill="url(#cardBg)" stroke="#0c3a35" stroke-width="3"/>
+
+    <!-- Gold service stripe at top -->
+    <rect x="-100" y="-62" width="200" height="20" fill="#e0b53c"/>
+    <rect x="-100" y="-44" width="200" height="2" fill="#7a5d10"/>
+
+    <!-- ID-photo placeholder (head silhouette) -->
+    <g transform="translate(-65 4)">
+      <rect x="-22" y="-22" width="44" height="44" rx="4" ry="4"
+            fill="#f1e2bd" stroke="#0c3a35" stroke-width="2"/>
+      <circle cx="0" cy="-6" r="9" fill="#0c3a35"/>
+      <path d="M -16 22 Q -16 6 0 6 Q 16 6 16 22 Z" fill="#0c3a35"/>
+    </g>
+
+    <!-- Text-line stand-ins next to the photo -->
+    <rect x="-30" y="-20" width="110" height="6" rx="2" ry="2" fill="#f1e2bd"/>
+    <rect x="-30" y="-8"  width="86"  height="6" rx="2" ry="2" fill="#cdbc92"/>
+    <rect x="-30" y="4"   width="110" height="6" rx="2" ry="2" fill="#cdbc92"/>
+
+    <!-- Barcode strip across the bottom (real Code 39 vibe) -->
+    <g fill="#0c3a35" transform="translate(-90 30)">
+      <rect x="0"   y="0" width="3" height="22"/>
+      <rect x="5"   y="0" width="2" height="22"/>
+      <rect x="10"  y="0" width="4" height="22"/>
+      <rect x="17"  y="0" width="2" height="22"/>
+      <rect x="22"  y="0" width="3" height="22"/>
+      <rect x="28"  y="0" width="2" height="22"/>
+      <rect x="33"  y="0" width="4" height="22"/>
+      <rect x="40"  y="0" width="2" height="22"/>
+      <rect x="45"  y="0" width="3" height="22"/>
+      <rect x="51"  y="0" width="2" height="22"/>
+      <rect x="56"  y="0" width="4" height="22"/>
+      <rect x="63"  y="0" width="2" height="22"/>
+      <rect x="68"  y="0" width="3" height="22"/>
+      <rect x="74"  y="0" width="4" height="22"/>
+      <rect x="81"  y="0" width="2" height="22"/>
+      <rect x="86"  y="0" width="3" height="22"/>
+      <rect x="92"  y="0" width="2" height="22"/>
+      <rect x="97"  y="0" width="4" height="22"/>
+      <rect x="104" y="0" width="2" height="22"/>
+      <rect x="109" y="0" width="3" height="22"/>
+      <rect x="115" y="0" width="2" height="22"/>
+      <rect x="120" y="0" width="4" height="22"/>
+      <rect x="127" y="0" width="3" height="22"/>
+      <rect x="133" y="0" width="2" height="22"/>
+      <rect x="138" y="0" width="4" height="22"/>
+      <rect x="145" y="0" width="2" height="22"/>
+      <rect x="150" y="0" width="3" height="22"/>
+      <rect x="157" y="0" width="2" height="22"/>
+      <rect x="162" y="0" width="4" height="22"/>
+      <rect x="169" y="0" width="2" height="22"/>
+      <rect x="174" y="0" width="3" height="22"/>
+    </g>
+  </g>
+
+  <!-- ============================== Beer bottle (in front, left) -->
+  <g transform="translate(78 30)">
+    <!-- Drop shadow — soft dark blob behind the bottle -->
+    <ellipse cx="0" cy="200" rx="40" ry="6" fill="rgba(0,0,0,0.45)"/>
+
+    <!-- Cap with crown notches -->
+    <rect x="-13" y="0" width="26" height="16" rx="2" ry="2"
+          fill="url(#cap)" stroke="#5e1810" stroke-width="2"/>
+    <line x1="-9" y1="3" x2="-9" y2="13" stroke="#5e1810" stroke-width="1.6"/>
+    <line x1="-3" y1="3" x2="-3" y2="13" stroke="#5e1810" stroke-width="1.6"/>
+    <line x1="3"  y1="3" x2="3"  y2="13" stroke="#5e1810" stroke-width="1.6"/>
+    <line x1="9"  y1="3" x2="9"  y2="13" stroke="#5e1810" stroke-width="1.6"/>
+
+    <!-- Neck -->
+    <rect x="-10" y="16" width="20" height="40"
+          fill="url(#bottleBody)" stroke="#1d0a04" stroke-width="2"/>
+
+    <!-- Shoulder + body — single rounded silhouette so it reads at 16px -->
+    <path d="M -10 56
+             Q -32 70 -32 90
+             L -32 178
+             Q -32 198 -10 198
+             L 10 198
+             Q 32 198 32 178
+             L 32 90
+             Q 32 70 10 56 Z"
+          fill="url(#bottleBody)" stroke="#1d0a04" stroke-width="2.5"/>
+
+    <!-- Glass highlight along the left edge — sells the curvature -->
+    <path d="M -20 80 Q -25 130 -22 178" stroke="rgba(255,255,255,0.22)"
+          stroke-width="5" stroke-linecap="round" fill="none"/>
+
+    <!-- Label band -->
+    <rect x="-28" y="110" width="56" height="54"
+          fill="#f4ecd6" stroke="#1d0a04" stroke-width="1.5"/>
+    <rect x="-28" y="120" width="56" height="9" fill="#a02a1f"/>
+    <rect x="-28" y="155" width="56" height="3" fill="#a02a1f"/>
+    <text x="0" y="148" text-anchor="middle"
+          font-family="DejaVu Sans, Liberation Sans, sans-serif"
+          font-size="14" font-weight="bold" fill="#3d1e08">ALE</text>
+  </g>
+</svg>
