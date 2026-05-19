@@ -8,6 +8,16 @@ Linux/macOS from source.
 The repo ships both the source and a prebuilt `BarScanner.exe` so you can
 double-click it on a Windows machine without installing Python.
 
+<p align="center">
+  <a href="GUIDE.md">
+    <img src="https://img.shields.io/badge/%F0%9F%93%96%20%20READ%20THE%20USER%20GUIDE-1f6d63?style=for-the-badge&labelColor=0e3a35" alt="Read the User Guide" height="60"/>
+  </a>
+  &nbsp;
+  <a href="https://github.com/NuclearChickens/CAC-Bar-Scanner/raw/main/GUIDE.pdf">
+    <img src="https://img.shields.io/badge/%F0%9F%93%84%20%20PRINTABLE%20PDF-d4af37?style=for-the-badge&labelColor=7a5d10" alt="Download printable PDF" height="60"/>
+  </a>
+</p>
+
 ## Download
 
 **[⬇ Download BarScanner.exe](https://github.com/NuclearChickens/CAC-Bar-Scanner/raw/main/BarScanner.exe)**
@@ -81,3 +91,6 @@ the exe.
 | `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon + version) |
 | `icon.ico`       | Multi-res Windows icon embedded in the exe            |
 | `icon_assets/`   | SVG icon source, rebuild script, version-info file    |
+| `GUIDE.md`       | Tab-by-tab user guide for non-technical operators     |
+| `GUIDE.pdf`      | Printable PDF of the same guide                       |
+| `build_guide_pdf.sh` | Regenerates `GUIDE.pdf` from `GUIDE.md`           |
