@@ -1,8 +1,7 @@
 # Using CAC Bar Scanner
 
-A step-by-step guide for operators and admins. Keep this open next to the
-kiosk or print the PDF (the **📄 Printable PDF** button on the
-[repo front page](https://github.com/NuclearChickens/CAC-Bar-Scanner)).
+A step-by-step guide for operators and admins. Keep this open next to
+the kiosk.
 
 > 🔗 **Project home:** <https://github.com/NuclearChickens/CAC-Bar-Scanner>
 > &nbsp;·&nbsp; Direct download:
@@ -32,10 +31,10 @@ unlock them for 5 minutes. See **[Unlocking settings](#unlocking-settings)**.
 
 The first time you set up a PC. You need admin rights on the machine.
 
-1. **Download the app.** Open the repo in any web browser at
-   <https://github.com/NuclearChickens/CAC-Bar-Scanner> and click
-   the **⬇ Download BarScanner.exe** button near the top. Your
-   browser saves it to your **Downloads** folder.
+1. **Download the app.** Open the project home page (URL at the
+   top of this guide) and click the **⬇ Download BarScanner.exe**
+   button near the top. Your browser saves the file to your
+   **Downloads** folder.
 
 2. **Open it.** Open File Explorer → **Downloads** → double-click
    `BarScanner.exe`.
