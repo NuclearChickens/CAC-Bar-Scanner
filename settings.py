@@ -121,9 +121,6 @@ class Settings:
     bans: Tuple[Ban, ...] = ()
     tracking_mode: str = DEFAULT_TRACKING_MODE
     rolling_hours: int = DEFAULT_ROLLING_HOURS
-    # Sticky flag so the first-launch "Add to Start menu?" dialog is shown
-    # exactly once. Set after the user picks any option (including Skip).
-    start_menu_prompt_shown: bool = False
 
     # ------------------------------------------------------------ hours
 
@@ -312,9 +309,6 @@ def from_dict(data: dict) -> Settings:
         bans=bans,
         tracking_mode=tracking_mode,
         rolling_hours=rolling_hours,
-        start_menu_prompt_shown=bool(
-            data.get("start_menu_prompt_shown", defaults.start_menu_prompt_shown)
-        ),
     )
     s.open_t  # noqa: B018  — validate HH:MM
     s.close_t  # noqa: B018

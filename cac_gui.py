@@ -24,7 +24,6 @@ from __future__ import annotations
 import os
 import sys
 import tkinter as tk
-from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -34,6 +33,7 @@ import backup
 import reset_log
 import settings as settings_mod
 import start_menu
+import version
 from cac_decoder import BRANCHES, BARCODE_LEN, CATEGORIES, InvalidBarcode, decode
 from scan_log import count_since, prune_before, record_scan
 
@@ -81,6 +81,25 @@ def _enable_windows_dpi_awareness() -> None:
         from ctypes import windll
         windll.shcore.SetProcessDpiAwareness(1)
     except (ImportError, AttributeError, OSError):
+        pass
+
+
+def _set_app_user_model_id() -> None:
+    """Tell Windows which app this process belongs to.
+
+    Without this, Windows groups our running app under a generic
+    "python.exe" entry in the taskbar (or worse, splits each Toplevel
+    into its own taskbar slot). Setting the AUMID early — before any
+    HWNDs are created — fixes taskbar grouping, Start menu pinning,
+    and jumplist routing. Must be called before Tk() ."""
+    if sys.platform != "win32":
+        return
+    try:
+        from ctypes import windll
+        windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            version.APP_USER_MODEL_ID
+        )
+    except (AttributeError, OSError):
         pass
 
 
@@ -1885,33 +1904,15 @@ class App(tk.Tk):
     # ---------------------------------------------------- Machine install
 
     def _maybe_offer_start_menu_install(self) -> None:
-        """Show the first-run install dialog at most once.
+        """Show the first-run install dialog when appropriate.
 
-        Skipped on non-Windows, when running from source (not a frozen
-        exe), when the prompt has already been shown, or when the
-        all-users Start menu shortcut already exists (a sign that
-        somebody already installed)."""
-        if sys.platform != "win32":
-            return
-        if not getattr(sys, "frozen", False):
-            return
-        if self.settings.start_menu_prompt_shown:
-            return
-        if start_menu.shortcut_exists():
-            self._record_start_menu_decision()
+        Skipped when the machine is already installed (HKLM uninstall
+        key exists), when the current user has previously declined,
+        or when we're not on a frozen Windows build. The install state
+        is checked centrally in ``start_menu.should_prompt_install``."""
+        if not start_menu.should_prompt_install():
             return
         self._open_install_dialog()
-
-    def _record_start_menu_decision(self) -> None:
-        """Persist that we've prompted, so we never ask again."""
-        new = replace(self.settings, start_menu_prompt_shown=True)
-        try:
-            settings_mod.save(new)
-        except OSError:
-            # If we can't persist, the worst case is we ask again next
-            # launch — not worth crashing the GUI over.
-            pass
-        self.settings = new
 
     def _open_install_dialog(self) -> None:
         dlg = tk.Toplevel(self)
@@ -1938,7 +1939,6 @@ class App(tk.Tk):
         ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, self._px(16)))
 
         def finish(message: str, ok: bool) -> None:
-            self._record_start_menu_decision()
             self._set_status(message, ok=ok)
             dlg.destroy()
 
@@ -1958,9 +1958,12 @@ class App(tk.Tk):
                 )
 
         def on_skip() -> None:
+            # Record this user's "not now" so the dialog doesn't keep
+            # popping back up on every launch.
+            start_menu.mark_user_declined()
             finish(
-                "Skipped. Run BarScanner.exe as administrator later to "
-                "finish setup.",
+                "Skipped. Right-click BarScanner.exe → Run as "
+                "administrator to install later.",
                 True,
             )
 
@@ -2002,12 +2005,17 @@ class App(tk.Tk):
 
 
 def main() -> None:
+    # Set AUMID before anything else — must come before any HWND
+    # creation (Tk root, install/uninstall dialogs, UAC re-spawn) so
+    # Windows attributes our windows to the right app.
+    _set_app_user_model_id()
     # Windows runs the registered UninstallString (BarScanner.exe --uninstall)
     # when the user picks Uninstall from the Start menu / Add-Remove Programs.
     # Handle that branch before we try to bring the GUI up.
     if start_menu.handle_uninstall_cli():
         return
-    # Elevated child writing the install (ACL + shortcut + registry).
+    # Elevated child writing the install (Program Files copy + ACL +
+    # shortcut + registry).
     if start_menu.handle_elevated_install_cli():
         return
     _enable_windows_dpi_awareness()

@@ -11,12 +11,22 @@ double-click it on a Windows machine without installing Python.
 ## Download
 
 **[⬇ Download BarScanner.exe](https://github.com/NuclearChickens/CAC-Bar-Scanner/raw/main/BarScanner.exe)**
-&nbsp;·&nbsp; ~11 MB &nbsp;·&nbsp; Windows 10/11 &nbsp;·&nbsp; no install
+&nbsp;·&nbsp; ~11 MB &nbsp;·&nbsp; Windows 10/11
 
-Save the file anywhere on the target PC and double-click to run. The first
-time, Windows may show **"Windows protected your PC"** — click **More
-info** → **Run anyway** (the warning appears because the binary isn't
-code-signed, not because anything is wrong with it).
+Double-click the downloaded file. The first time, Windows may show
+**"Windows protected your PC"** (the binary isn't code-signed) — click
+**More info** → **Run anyway**. On first launch the app offers to install
+for the whole PC: click **Install** and approve the UAC prompt, and it
+will:
+
+- Copy `BarScanner.exe` to `C:\Program Files\CAC Bar Scanner\`
+- Add a Start menu shortcut for every user
+- Register itself in **Settings → Apps** so it can be uninstalled cleanly
+- Create a shared data folder at `C:\ProgramData\CACBarScanner\` so every
+  operator on the PC sees the same configuration and scan history
+
+After install the Downloads copy can be deleted — Start menu / taskbar
+launches use the Program Files copy.
 
 ## Run from source
 
@@ -66,7 +76,8 @@ the exe.
 | `audit_log.py`   | Append-only audit trail of admin actions              |
 | `reset_log.py`   | Periodic log rollover                                 |
 | `backup.py`      | Settings + log backup/restore                         |
-| `start_menu.py`  | First-launch admin install (ProgramData ACL + shortcut) |
-| `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon-embedded) |
+| `start_menu.py`  | Install/uninstall (Program Files copy, ACL, shortcut, registry) |
+| `version.py`     | App name/version/AUMID — single source of truth       |
+| `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon + version) |
 | `icon.ico`       | Multi-res Windows icon embedded in the exe            |
-| `icon_assets/`   | SVG source and rebuild script for `icon.ico`          |
+| `icon_assets/`   | SVG icon source, rebuild script, version-info file    |

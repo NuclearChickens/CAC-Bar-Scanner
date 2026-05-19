@@ -44,13 +44,15 @@ import os
 import shutil
 import subprocess
 import sys
+from datetime import date
 from enum import Enum
 from pathlib import Path
 
 import settings as settings_mod
+import version
 
 
-APP_NAME = "CAC Bar Scanner"
+APP_NAME = version.APP_NAME
 SHORTCUT_FILENAME = f"{APP_NAME}.lnk"
 
 # CLI flags used to re-spawn this exe in elevated contexts.
@@ -95,7 +97,7 @@ def shortcut_exists() -> bool:
 
 
 def _exe_path() -> str:
-    """Path the shortcut should point at: the running BarScanner.exe.
+    """Path to the running BarScanner.exe.
 
     For a frozen PyInstaller exe that's ``sys.executable``; for a
     source-tree run we fall back to ``argv[0]`` so dev imports stay
@@ -103,6 +105,66 @@ def _exe_path() -> str:
     if getattr(sys, "frozen", False):
         return sys.executable
     return os.path.abspath(sys.argv[0])
+
+
+# ---------------------------------------------------------------- install state
+
+def is_installed() -> bool:
+    """True iff the HKLM uninstall registry entry exists, meaning the
+    app has been installed via the elevated install flow at some point.
+
+    Used to decide whether the first-run install dialog should appear
+    for the current user — once anyone on the machine installs, the
+    dialog disappears for everyone."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, UNINSTALL_REGISTRY_KEY
+        ):
+            return True
+    except OSError:
+        return False
+
+
+def _user_declined_marker() -> Path:
+    """Per-user file that, if present, suppresses the install dialog
+    for this user only. SETTINGS_DIR is machine-shared so we can't put
+    this flag there without also silencing it for everyone else."""
+    local = os.environ.get(
+        "LOCALAPPDATA", str(Path.home() / "AppData" / "Local")
+    )
+    return Path(local) / "CACBarScanner" / "install_declined"
+
+
+def should_prompt_install() -> bool:
+    """Whether the first-run install dialog should be shown to this user.
+
+    Suppressed when the machine already has the app installed, when
+    the current user has previously declined, or when we're not on a
+    frozen Windows build."""
+    if sys.platform != "win32":
+        return False
+    if not getattr(sys, "frozen", False):
+        return False
+    if is_installed():
+        return False
+    if _user_declined_marker().exists():
+        return False
+    return True
+
+
+def mark_user_declined() -> None:
+    """Record that the current user said "Not now" to install."""
+    marker = _user_declined_marker()
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.touch()
+    except OSError:
+        # Best-effort; if we can't write the marker the only consequence
+        # is the dialog reappears next launch.
+        pass
 
 
 # ---------------------------------------------------------------- elevation
@@ -168,55 +230,140 @@ def uninstall_for_machine(purge_data: bool) -> InstallResult:
 # ---------------------------------------------------------------- the install
 
 def _do_machine_install() -> None:
-    """Run the privileged half of the install. Caller must be elevated."""
+    """Run the privileged half of the install. Caller must be elevated.
+
+    Steps:
+        1. Copy the running exe into %ProgramFiles%\\CAC Bar Scanner\\,
+           the canonical Windows install location. The shortcut and the
+           registry uninstaller both point at this copy, so the user's
+           original download (typically in Downloads) can be safely
+           deleted later without breaking the install.
+        2. Provision %ProgramData%\\CACBarScanner\\ as the shared data
+           directory with an Authenticated Users: Modify ACL.
+        3. Drop the all-users Start menu shortcut.
+        4. Write the HKLM uninstall registry entry — DisplayName,
+           DisplayVersion, Publisher, EstimatedSize, InstallDate,
+           DisplayIcon, UninstallString, etc."""
+    installed_exe = _install_exe_to_program_files()
+
     data_dir = settings_mod.SETTINGS_DIR
     data_dir.mkdir(parents=True, exist_ok=True)
     _grant_authenticated_users_modify(data_dir)
+
     _create_shortcut(
-        _exe_path(), all_users_start_menu() / SHORTCUT_FILENAME
+        str(installed_exe),
+        all_users_start_menu() / SHORTCUT_FILENAME,
     )
-    _register_uninstall_entry()
+    _register_uninstall_entry(installed_exe)
+
+
+def _install_exe_to_program_files() -> Path:
+    """Copy the running exe to its canonical Program Files location.
+
+    Idempotent: if we're already running from the install location
+    (re-running install on top of an existing install) the copy is
+    skipped."""
+    install_dir = version.install_dir()
+    install_dir.mkdir(parents=True, exist_ok=True)
+    installed_exe = version.installed_exe()
+
+    source = Path(_exe_path()).resolve()
+    if source != installed_exe.resolve():
+        shutil.copy2(source, installed_exe)
+    return installed_exe
 
 
 def _do_machine_uninstall(purge_data: bool) -> None:
     """Run the privileged half of the uninstall. Caller must be elevated.
 
-    The running exe can't delete itself, so we leave BarScanner.exe in
-    place — the user moves or deletes it manually from wherever they
-    saved it."""
-    # Best-effort: a failure in any single step shouldn't block the
-    # rest, otherwise a partial-install state can become unremovable.
+    Best-effort: a failure in any single step shouldn't block the rest,
+    otherwise a partial-install state can become unremovable.
+
+    The running exe is the one we're trying to delete (it lives in the
+    install folder), so the actual file deletion is deferred to the
+    next reboot via MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT). That's the
+    standard Windows uninstaller pattern (Inno Setup, NSIS, etc. all
+    use it for the same reason)."""
     lnk = all_users_start_menu() / SHORTCUT_FILENAME
     if lnk.exists():
         try:
             lnk.unlink()
         except OSError:
             pass
+
     _remove_uninstall_entry()
+
     if purge_data:
         try:
             shutil.rmtree(settings_mod.SETTINGS_DIR, ignore_errors=True)
         except OSError:
             pass
 
+    install_dir = version.install_dir()
+    if install_dir.exists():
+        _schedule_delete_at_reboot(install_dir)
+
+
+def _schedule_delete_at_reboot(path: Path) -> None:
+    """Mark every file under ``path`` (and the directory itself) for
+    deletion at next reboot, via MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT).
+
+    Walks children deepest-first so empty parent directories can be
+    successfully scheduled too (Windows only removes empty dirs this
+    way at reboot)."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+
+    MOVEFILE_DELAY_UNTIL_REBOOT = 0x4
+
+    MoveFileEx = ctypes.windll.kernel32.MoveFileExW
+    MoveFileEx.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR, wintypes.DWORD)
+    MoveFileEx.restype  = wintypes.BOOL
+
+    def _schedule(p: Path) -> None:
+        try:
+            MoveFileEx(str(p), None, MOVEFILE_DELAY_UNTIL_REBOOT)
+        except Exception:
+            pass
+
+    for child in sorted(path.rglob("*"), key=lambda p: -len(p.parts)):
+        _schedule(child)
+    _schedule(path)
+
 
 # ---------------------------------------------------------------- registry
 
-def _register_uninstall_entry() -> None:
+def _register_uninstall_entry(installed_exe: Path) -> None:
     """Write the HKLM Uninstall entry that Add/Remove Programs and the
-    Start menu's right-click Uninstall both read."""
+    Start menu's right-click Uninstall both read.
+
+    Includes all the fields a normal Windows installer writes —
+    DisplayVersion, EstimatedSize, InstallDate, URLInfoAbout — so the
+    app shows up cleanly in Settings → Apps with version, size, and
+    install date alongside the publisher and icon."""
     import winreg  # Windows-only stdlib module
 
-    exe = _exe_path()
-    install_dir = str(Path(exe).parent)
+    install_dir = str(installed_exe.parent)
+    try:
+        size_kb = max(1, installed_exe.stat().st_size // 1024)
+    except OSError:
+        size_kb = 0
+
     with winreg.CreateKey(
         winreg.HKEY_LOCAL_MACHINE, UNINSTALL_REGISTRY_KEY
     ) as k:
-        winreg.SetValueEx(k, "DisplayName",     0, winreg.REG_SZ,    APP_NAME)
-        winreg.SetValueEx(k, "Publisher",       0, winreg.REG_SZ,    "Jeremy Evans")
-        winreg.SetValueEx(k, "DisplayIcon",     0, winreg.REG_SZ,    f"{exe},0")
-        winreg.SetValueEx(k, "UninstallString", 0, winreg.REG_SZ,    f'"{exe}" {UNINSTALL_FLAG}')
+        winreg.SetValueEx(k, "DisplayName",     0, winreg.REG_SZ,    version.APP_NAME)
+        winreg.SetValueEx(k, "DisplayVersion",  0, winreg.REG_SZ,    version.APP_VERSION)
+        winreg.SetValueEx(k, "Publisher",       0, winreg.REG_SZ,    version.APP_PUBLISHER)
+        winreg.SetValueEx(k, "DisplayIcon",     0, winreg.REG_SZ,    f"{installed_exe},0")
+        winreg.SetValueEx(k, "UninstallString", 0, winreg.REG_SZ,    f'"{installed_exe}" {UNINSTALL_FLAG}')
         winreg.SetValueEx(k, "InstallLocation", 0, winreg.REG_SZ,    install_dir)
+        winreg.SetValueEx(k, "InstallDate",     0, winreg.REG_SZ,    date.today().strftime("%Y%m%d"))
+        winreg.SetValueEx(k, "URLInfoAbout",    0, winreg.REG_SZ,    version.APP_URL)
+        winreg.SetValueEx(k, "Comments",        0, winreg.REG_SZ,    version.APP_DESCRIPTION)
+        winreg.SetValueEx(k, "EstimatedSize",   0, winreg.REG_DWORD, size_kb)
         winreg.SetValueEx(k, "NoModify",        0, winreg.REG_DWORD, 1)
         winreg.SetValueEx(k, "NoRepair",        0, winreg.REG_DWORD, 1)
 
