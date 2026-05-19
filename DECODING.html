@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>CAC Barcode Guide</title>
+<style>
+@page { size: Letter; margin: 0.75in 0.7in; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body {
+  font-family: "Charter", "Source Serif Pro", Georgia, serif;
+  font-size: 10.5pt;
+  line-height: 1.45;
+  color: #111;
+  max-width: 7.1in;
+  margin: 0 auto;
+  padding: 0.4in 0;
+}
+h1 {
+  font-size: 18pt;
+  line-height: 1.2;
+  margin: 0 0 0.4em;
+  border-bottom: 2px solid #111;
+  padding-bottom: 0.25em;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h2 {
+  font-size: 13pt;
+  margin: 1.4em 0 0.5em;
+  break-after: avoid;
+  page-break-after: avoid;
+  border-bottom: 1px solid #888;
+  padding-bottom: 0.15em;
+}
+h3 {
+  font-size: 11pt;
+  margin: 1em 0 0.4em;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+h2 + p, h3 + p { break-after: avoid; page-break-after: avoid; }
+p, ul, ol, blockquote, table { margin: 0.5em 0; }
+ul, ol { padding-left: 1.4em; }
+li { margin: 0.15em 0; }
+blockquote {
+  border-left: 3px solid #888;
+  margin-left: 0;
+  padding: 0.2em 0.8em;
+  color: #333;
+  background: #f6f6f6;
+  font-size: 9.8pt;
+}
+code {
+  font-family: "DejaVu Sans Mono", "Menlo", Consolas, monospace;
+  font-size: 9.5pt;
+  background: #f0f0f0;
+  padding: 0.05em 0.3em;
+  border-radius: 2px;
+}
+pre {
+  background: #f4f4f4;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  padding: 0.5em 0.7em;
+  font-size: 7.8pt;
+  line-height: 1.35;
+  white-space: pre;
+  overflow: hidden;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+pre code { background: none; padding: 0; font-size: inherit; white-space: pre; }
+hr { border: 0; border-top: 1px solid #bbb; margin: 1.2em 0; }
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 9.5pt;
+}
+thead { display: table-header-group; }
+tfoot { display: table-footer-group; }
+tr, th, td { break-inside: avoid; page-break-inside: avoid; }
+th, td {
+  border: 1px solid #999;
+  padding: 0.25em 0.45em;
+  vertical-align: top;
+  text-align: left;
+}
+th { background: #e8e8e8; font-weight: 600; }
+tbody tr:nth-child(even) td { background: #fafafa; }
+a { color: #14418f; text-decoration: none; word-break: break-all; }
+h2 + hr, hr + h2 { display: none; }
+section, h2 { break-inside: avoid; }
+@media print {
+  body { padding: 0; max-width: none; }
+  a { color: #111; }
+}
+</style>
+</head>
+<body>
+<h1>CAC Barcode Guide for Kids Who Can't Read Good and Who Wanna Learn to Do Other Stuff Good Too</h1>
+<p>A from-scratch guide to pulling <strong>EDIPI</strong>, <strong>Personnel Category Code</strong>,
+and <strong>Branch Code</strong> out of the 18-character barcode on the back of a
+U.S. Department of Defense Common Access Card (CAC).</p>
+<p>The two source specs:</p>
+<ul>
+<li><strong>CAC End-Point Implementation Guide v2.1.1</strong> (2 April 2010) —
+  high-level reference.
+  <a href="https://www.cac.mil/Portals/53/Documents/CAC_End_Point_Implementation_Guide_v2.1.1(2010.4.2).pdf">https://www.cac.mil/Portals/53/Documents/CAC_End_Point_Implementation_Guide_v2.1.1(2010.4.2).pdf</a></li>
+<li><strong>DoD ID Bar Code Formats — SDK v7.5.0</strong> (September 2012) — contains
+  the field layout (§2.1, Table 2), the base-32 algorithm (Appendix
+  B.1), and the lookup tables (Tables 25–27 in Appendix C). Section and
+  table numbers below refer to this document.
+  <a href="https://archive.org/details/DoDIDBarCodeSDKFormatsV750Sep2012">https://archive.org/details/DoDIDBarCodeSDKFormatsV750Sep2012</a></li>
+</ul>
+<p>The CAC carries machine-readable data in three places: the embedded
+chip, a PDF417 barcode on the <strong>front</strong> (large, 2D), and a Code 39
+barcode on the <strong>back</strong> (small, linear). <strong>This document covers only
+the Code 39 barcode on the back.</strong> Your scanner does the Code 39
+decoding itself and hands your program an ordinary 18-character ASCII
+string; your only job is to interpret it.</p>
+<hr>
+<h2>1. The 18-character field layout</h2>
+<p>From <strong>SDK v7.5.0, §2.1, Table 2 (pp. 11–12)</strong>, the barcode contains
+seven fixed-width fields packed into 18 characters with <strong>no separators</strong>:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Position (1-indexed)</th>
+<th>Field</th>
+<th style="text-align: right;">Length</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;">1</td>
+<td>Bar Code Version Code (VC)</td>
+<td style="text-align: right;">1</td>
+<td>Always <code>"1"</code> for this layout.</td>
+</tr>
+<tr>
+<td style="text-align: right;">2–7</td>
+<td>Person Designator Identifier (PDI)</td>
+<td style="text-align: right;">6</td>
+<td>Base-32-encoded 9-digit ID. Historically the SSN; on modern cards a synthetic card-identifier starting with <code>999</code> (see §4).</td>
+</tr>
+<tr>
+<td style="text-align: right;">8</td>
+<td>Person Designator Type Code (PDT)</td>
+<td style="text-align: right;">1</td>
+<td>Letter saying what kind of ID the PDI is (Table 25).</td>
+</tr>
+<tr>
+<td style="text-align: right;">9–15</td>
+<td>DoD EDI Person Identifier (EDIPI)</td>
+<td style="text-align: right;">7</td>
+<td>Base-32-encoded 10-digit DEERS identifier — the durable, unique person ID.</td>
+</tr>
+<tr>
+<td style="text-align: right;">16</td>
+<td>Personnel Category Code (PCC)</td>
+<td style="text-align: right;">1</td>
+<td>Letter saying what category of person the cardholder is (Table 27).</td>
+</tr>
+<tr>
+<td style="text-align: right;">17</td>
+<td>Branch Code (BC)</td>
+<td style="text-align: right;">1</td>
+<td>Letter or digit identifying branch of service (Table 26).</td>
+</tr>
+<tr>
+<td style="text-align: right;">18</td>
+<td>Card Instance Identifier (CI)</td>
+<td style="text-align: right;">1</td>
+<td>Random character distinguishing re-issued cards. Ignore for decoding purposes.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>Positions are 1-indexed in the spec; in 0-indexed Python those become
+  <code>d[0]</code>, <code>d[1:7]</code>, <code>d[7]</code>, <code>d[8:15]</code>, <code>d[15]</code>, <code>d[16]</code>, <code>d[17]</code>.</li>
+<li>Length is always exactly 18. Anything else is not a CAC Code 39
+  barcode (or the scanner is misconfigured).</li>
+<li>All letters are uppercase — normalise with <code>.upper()</code> to be safe.</li>
+</ul>
+<p>For just EDIPI + PCC + Branch you only need positions 9–15, 16, and 17.</p>
+<hr>
+<h2>2. Base-32 encoding (Appendix B.1)</h2>
+<p>A 10-digit decimal EDIPI would eat 10 characters of an 18-character
+budget. The spec instead writes the EDIPI (and PDI) in <strong>base 32</strong>: 10
+decimal digits fit in 7 base-32 digits, 9 fit in 6.</p>
+<h3>2.1 The alphabet</h3>
+<pre><code>Value:   0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31
+Symbol:  0 1 2 3 4 5 6 7 8 9  A  B  C  D  E  F  G  H  I  J  K  L  M  N  O  P  Q  R  S  T  U  V
+</code></pre>
+<p>Digits <code>0</code>–<code>9</code> are themselves; letters <code>A</code>–<code>V</code> are 10–31. The letters
+<code>W</code>, <code>X</code>, <code>Y</code>, <code>Z</code> are <strong>not used</strong>.</p>
+<blockquote>
+<p>SDK v7.5.0, p. 42: "thirty-two symbols represented by the ten decimal
+digits 0 through 9 and the first twenty-two alphabetic characters A
+through V… A represents the 11th symbol… V represents the 32nd."</p>
+</blockquote>
+<p>This is the standard "extended-hex" base-32 alphabet — and exactly the
+alphabet Python's built-in <code>int(s, 32)</code> already understands.</p>
+<h3>2.2 In one line of Python</h3>
+<pre><code class="language-python">edipi = int(barcode[8:15], 32)        # base-32 → integer
+edipi_str = f&quot;{edipi:010d}&quot;           # zero-pad to 10 digits
+</code></pre>
+<p>The zero-pad matters: without it a short EDIPI like <code>0123456789</code> would
+print as <code>123456789</code>. Same idea for the PDI: pad to 9 digits.</p>
+<blockquote>
+<p>Per Table 2 footnotes (p. 12): the 9-digit SSN range <code>000-00-0000</code> to
+<code>999-99-9999</code> maps to base-32 <code>000000</code>–<code>TPLIFV</code>; the 10-digit EDIPI
+range <code>1000000000</code>–<code>9999999999</code> maps to base-32 <code>0TPLIG0</code>–<code>9AONOVV</code>.</p>
+</blockquote>
+<p>If you want the math by hand: for digits <code>d₁ d₂ … dₙ</code> (left to right),
+<code>value = d₁·32^(n-1) + d₂·32^(n-2) + … + dₙ·32^0</code>. The spec's worked
+example (p. 42) converts <code>V62G</code> to <code>(31·32³)+(6·32²)+(2·32)+16 = 1,022,032</code>.</p>
+<hr>
+<h2>3. Lookup tables (Appendix C)</h2>
+<h3>3.1 Branch (Service) Codes — Table 26, p. 50</h3>
+<p>Position 17 of the barcode.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">Code</th>
+<th>Branch / Service</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">A</td>
+<td>USA (Army)</td>
+</tr>
+<tr>
+<td style="text-align: center;">C</td>
+<td>USCG (Coast Guard)</td>
+</tr>
+<tr>
+<td style="text-align: center;">D</td>
+<td>DoD</td>
+</tr>
+<tr>
+<td style="text-align: center;">F</td>
+<td>USAF (Air Force)</td>
+</tr>
+<tr>
+<td style="text-align: center;">H</td>
+<td>USPHS (Public Health Service)</td>
+</tr>
+<tr>
+<td style="text-align: center;">M</td>
+<td>USMC (Marine Corps)</td>
+</tr>
+<tr>
+<td style="text-align: center;">N</td>
+<td>USN (Navy)</td>
+</tr>
+<tr>
+<td style="text-align: center;">O</td>
+<td>NOAA</td>
+</tr>
+<tr>
+<td style="text-align: center;">1</td>
+<td>Foreign Army</td>
+</tr>
+<tr>
+<td style="text-align: center;">2</td>
+<td>Foreign Navy</td>
+</tr>
+<tr>
+<td style="text-align: center;">3</td>
+<td>Foreign Marine Corps</td>
+</tr>
+<tr>
+<td style="text-align: center;">4</td>
+<td>Foreign Air Force</td>
+</tr>
+<tr>
+<td style="text-align: center;">X</td>
+<td>Other / Not Applicable</td>
+</tr>
+</tbody>
+</table>
+<h3>3.2 Personnel Category Codes — Table 27, p. 51</h3>
+<p>Position 16 of the barcode.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">Code</th>
+<th>Category</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">A</td>
+<td>Active duty member</td>
+</tr>
+<tr>
+<td style="text-align: center;">B</td>
+<td>Presidential Appointee</td>
+</tr>
+<tr>
+<td style="text-align: center;">C</td>
+<td>DoD civil service employee</td>
+</tr>
+<tr>
+<td style="text-align: center;">D</td>
+<td>100% disabled American veteran</td>
+</tr>
+<tr>
+<td style="text-align: center;">E</td>
+<td>DoD contract employee</td>
+</tr>
+<tr>
+<td style="text-align: center;">F</td>
+<td>Former member (20-yr active-duty, eligible to retire, chose discharge)</td>
+</tr>
+<tr>
+<td style="text-align: center;">G</td>
+<td>National Guard, mobilised or on active duty 31+ days</td>
+</tr>
+<tr>
+<td style="text-align: center;">H</td>
+<td>Medal of Honor recipient</td>
+</tr>
+<tr>
+<td style="text-align: center;">I</td>
+<td>Non-DoD civil service employee</td>
+</tr>
+<tr>
+<td style="text-align: center;">J</td>
+<td>Academy student (excludes OCS)</td>
+</tr>
+<tr>
+<td style="text-align: center;">K</td>
+<td>Non-appropriated fund (NAF) DoD employee</td>
+</tr>
+<tr>
+<td style="text-align: center;">L</td>
+<td>Lighthouse service</td>
+</tr>
+<tr>
+<td style="text-align: center;">M</td>
+<td>Non-Government agency personnel (e.g. American Red Cross)</td>
+</tr>
+<tr>
+<td style="text-align: center;">N</td>
+<td>National Guard, not on active duty or active 30 days or less</td>
+</tr>
+<tr>
+<td style="text-align: center;">O</td>
+<td>Non-DoD contract employee</td>
+</tr>
+<tr>
+<td style="text-align: center;">Q</td>
+<td>Reserve retiree not yet eligible for retired pay</td>
+</tr>
+<tr>
+<td style="text-align: center;">R</td>
+<td>Retired Uniformed Service member eligible for retired pay</td>
+</tr>
+<tr>
+<td style="text-align: center;">S</td>
+<td>Reserve, mobilised or on active duty 31+ days</td>
+</tr>
+<tr>
+<td style="text-align: center;">T</td>
+<td>Foreign military member</td>
+</tr>
+<tr>
+<td style="text-align: center;">U</td>
+<td>Foreign national employee (DoD or non-DoD)</td>
+</tr>
+<tr>
+<td style="text-align: center;">V</td>
+<td>Reserve, not on active duty or active 30 days or less</td>
+</tr>
+<tr>
+<td style="text-align: center;">W</td>
+<td>DoD beneficiary (e.g. former or surviving spouse)</td>
+</tr>
+<tr>
+<td style="text-align: center;">Y</td>
+<td>Retired DoD Civil Service Employee</td>
+</tr>
+</tbody>
+</table>
+<p>Letters not listed (<code>P</code>, <code>X</code>, <code>Z</code>, …) are undefined and should fall
+through to "unknown". <code>P</code> appears in the older <strong>Member</strong> Category Code
+(TAMP) but not in the modern Personnel Category Code.</p>
+<p>Table 25 (PDT codes — <code>S</code>=SSN, <code>N</code>/<code>P</code>/<code>D</code>/<code>F</code>/<code>T</code>/<code>I</code> for various
+non-SSN identifiers) is in the SDK doc but is not needed for the three
+fields above.</p>
+<hr>
+<h2>4. A note on the PDI (skip if not interested)</h2>
+<p>Originally the PDI held the cardholder's real nine-digit SSN in base-32.
+The DoD has since stopped putting real SSNs on cards; the PDI now
+contains a synthetic card-identifier whose leading three digits are
+always <code>999</code> (an invalid SSN range), with the remaining six digits
+giving 10⁶ unique values per person. The PDT field will still typically
+be <code>S</code> for legacy compatibility.</p>
+<hr>
+<h2>5. Worked end-to-end example</h2>
+<p>The DoD "Appendix C — Sample Barcodes" document gives:</p>
+<pre><code>1TOQQG0S14PC0MIAA5
+</code></pre>
+<p>Splitting by the field widths from §1:</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: center;">Positions</th>
+<th>Slice</th>
+<th>Decoded</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">1</td>
+<td><code>1</code></td>
+<td>Version code (must be <code>1</code>).</td>
+</tr>
+<tr>
+<td style="text-align: center;">2–7</td>
+<td><code>TOQQG0</code></td>
+<td>PDI = <code>999123456</code> (synthetic; see §4).</td>
+</tr>
+<tr>
+<td style="text-align: center;">8</td>
+<td><code>S</code></td>
+<td>PDT = SSN.</td>
+</tr>
+<tr>
+<td style="text-align: center;">9–15</td>
+<td><code>14PC0MI</code></td>
+<td>EDIPI = <strong><code>1234567890</code></strong>.</td>
+</tr>
+<tr>
+<td style="text-align: center;">16</td>
+<td><code>A</code></td>
+<td>Personnel Category = <strong>Active duty member</strong>.</td>
+</tr>
+<tr>
+<td style="text-align: center;">17</td>
+<td><code>A</code></td>
+<td>Branch = <strong>USA (Army)</strong>.</td>
+</tr>
+<tr>
+<td style="text-align: center;">18</td>
+<td><code>5</code></td>
+<td>Card instance (ignore).</td>
+</tr>
+</tbody>
+</table>
+<p>Verify in Python: <code>int("14PC0MI", 32)</code> → <code>1234567890</code>,
+<code>f"{1234567890:010d}"</code> → <code>"1234567890"</code>.</p>
+<p>(Beware: in scanned/OCR copies of the spec the digit <code>0</code> is often
+misread as the letter <code>O</code>. A real scanner hands you the correct
+characters.)</p>
+<hr>
+<h2>6. References</h2>
+<ol>
+<li><strong>CAC End-Point Implementation Guide v2.1.1</strong>, DMDC, 2 April 2010.
+   <a href="https://www.cac.mil/Portals/53/Documents/CAC_End_Point_Implementation_Guide_v2.1.1(2010.4.2).pdf">https://www.cac.mil/Portals/53/Documents/CAC_End_Point_Implementation_Guide_v2.1.1(2010.4.2).pdf</a></li>
+<li><strong>DoD ID Bar Code Formats — SDK v7.5.0</strong>, DMDC, September 2012.
+   §2.1 / Table 2 (field layout), Appendix B.1 (base-32), Appendix C
+   Tables 25–27 (PDT, Branch, PCC).
+   <a href="https://archive.org/details/DoDIDBarCodeSDKFormatsV750Sep2012">https://archive.org/details/DoDIDBarCodeSDKFormatsV750Sep2012</a></li>
+<li><strong>Appendix C — Sample Barcodes (CAC)</strong>, DMDC. Source of the worked
+   example <code>1TOQQG0S14PC0MIAA5</code>.
+   <a href="https://archive.org/details/AppedixCSampleBarcodesCommonAccessCardCAC">https://archive.org/details/AppedixCSampleBarcodesCommonAccessCardCAC</a></li>
+<li><strong>ISO/IEC 16388</strong> — the Code 39 standard. Implemented by your
+   scanner; you do not need to read it.</li>
+<li><strong><code>jkusner/CACBarcode</code></strong> on GitHub — a Python reference implementation.
+   <a href="https://github.com/jkusner/CACBarcode">https://github.com/jkusner/CACBarcode</a></li>
+</ol>
+</body>
+</html>

@@ -1,0 +1,61 @@
+# dockur/compose.yml — full Windows VM in Docker for native PyInstaller
+# builds. Use this when you want to verify a build in real Windows
+# (vs. the Wine-in-Docker fast path at ../build_exe.sh).
+#
+# First-time setup (~30 minutes, mostly waiting for Windows to install):
+#
+#   1. From this directory:
+#          docker compose up -d
+#
+#   2. Open http://localhost:8006 in a browser to watch Windows install.
+#      Don't close the tab — the install needs the VNC connection alive.
+#
+#   3. After Windows reaches the desktop, the OEM hook auto-runs
+#      ./oem/install.bat and installs Python 3.12 + PyInstaller.
+#      That takes another 5–10 minutes; watch it via the same web
+#      console. The installer drops a "READY.txt" on the desktop when
+#      it finishes.
+#
+#   4. Build by running ./build.sh from the host (it RDPs in and runs
+#      pyinstaller against the shared mount). The first time you'll
+#      need ``sudo pacman -S freerdp`` (xfreerdp is the RDP client).
+#      Or, manually: RDP to localhost:3389 as builder/builder, open
+#      Command Prompt, and run:
+#          Z:\dockur\build.bat
+#
+#   5. The output dist\BarScanner.exe appears in the host's
+#      ../scanner/ directory.
+#
+# Subsequent builds are fast: just step 4. Stop the VM with
+# ``docker compose down``; bring it back up the same way (Windows
+# state survives in ./windows-storage/).
+
+services:
+  windows:
+    image: dockurr/windows
+    container_name: cac_scanner_win_builder
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    ports:
+      - "8006:8006"        # noVNC web console — http://localhost:8006
+      - "3389:3389/tcp"    # RDP — connect with `xfreerdp /v:localhost`
+      - "3389:3389/udp"
+    volumes:
+      - ./windows-storage:/storage   # Windows install + VM disk live here
+      - ./oem:/oem                   # auto-runs install.bat on first boot
+      - ../:/data                    # scanner sources visible inside Windows
+                                     # at \\host.lan\Data (mapped to Z: by
+                                     # install.bat). Output dist\ also lands
+                                     # back in the host repo via this mount.
+    environment:
+      VERSION: "11"          # Windows 11 — change to "10" for Win10
+      DISK_SIZE: "32G"
+      RAM_SIZE: "4G"
+      CPU_CORES: "4"
+      USERNAME: "builder"
+      PASSWORD: "builder"
+    restart: unless-stopped
+    stop_grace_period: 2m

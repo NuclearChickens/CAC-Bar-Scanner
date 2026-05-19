@@ -1,0 +1,79 @@
+# CAC-Bar-Scanner
+
+Tkinter GUI that reads CAC Code 39 barcodes from a USB scanner, decodes them,
+and enforces per-user/per-day access policy (hours, daily limits, roster,
+banned list). Designed for kiosk-style use on Windows; runs the same on
+Linux/macOS from source.
+
+The repo ships both the source and a prebuilt `BarScanner.exe` so you can
+double-click it on a Windows machine without installing Python.
+
+## Run the prebuilt binary
+
+Copy `BarScanner.exe` to a Windows machine and double-click. No install
+needed; PyInstaller bundles the Python runtime.
+
+## Run from source
+
+Requires Python 3.10+ with Tk available (most distros ship it; on Debian/
+Ubuntu install `python3-tk`).
+
+```bash
+python3 cac_gui.py
+```
+
+There are no third-party deps for the GUI itself. The optional doc-build
+helpers (`build_printable.py`, `build_sop_pdf.py`) need `reportlab`.
+
+Keys:
+- `F11` — toggle fullscreen
+- `Esc` — exit fullscreen
+
+## Build the `.exe` yourself
+
+Two paths, depending on whether you want fast or faithful.
+
+### Fast: Wine in Docker (~1 minute after first pull)
+
+```bash
+./build_exe.sh
+```
+
+Produces `dist/BarScanner.exe`. Uses `batonogov/pyinstaller-windows`; first
+run pulls the image (~2 GB). PyInstaller is **not** a cross-compiler — this
+runs real PyInstaller inside Wine inside Linux.
+
+### Faithful: real Windows in Docker
+
+For verifying a build in a genuine Windows environment. See
+`dockur/compose.yml` for the full procedure. One-time ~30-minute Windows
+install, then builds via RDP in a couple of minutes:
+
+```bash
+cd dockur
+docker compose up -d            # boots Windows, installs Python+PyInstaller
+# wait for READY.txt on the desktop (watch http://localhost:8006)
+./build.sh                      # RDPs in, runs pyinstaller, drops dist/BarScanner.exe
+```
+
+## Documentation
+
+- `GUIDE.pdf` — end-user operator guide (screenshots in `guide_assets/`)
+- `SOP.pdf` — standard operating procedure
+- `DECODING.pdf` — reference: the CAC Code 39 barcode layout this app parses
+
+## Source layout
+
+| File             | Role                                                  |
+| ---------------- | ----------------------------------------------------- |
+| `cac_gui.py`     | Tk application — Notebook with Scanner / Hours / Limits / Roster / Banned tabs |
+| `cac_decoder.py` | Parses an 18-char CAC Code 39 barcode into fields     |
+| `cac_code39.py`  | Code 39 charset helpers                               |
+| `settings.py`    | Persisted config (hours, limits, roster, banned)      |
+| `scan_log.py`    | Per-scan record + count-since-date queries            |
+| `audit_log.py`   | Append-only audit trail of admin actions              |
+| `reset_log.py`   | Periodic log rollover                                 |
+| `backup.py`      | Settings + log backup/restore                         |
+| `build_exe.sh`   | Wine-in-Docker build script                           |
+| `dockur/`        | Native Windows VM build environment (alternative)     |
+| `BarScanner.spec`| PyInstaller spec (single-file, windowed)              |

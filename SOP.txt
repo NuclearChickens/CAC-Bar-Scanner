@@ -1,0 +1,71 @@
+================================================================
+   CAC BARCODE SCANNER - STANDARD OPERATING PROCEDURE
+================================================================
+Reads CAC Code-39 barcodes, decides if the holder may be served,
+and tracks drinks per DoD ID against a configurable limit.
+
+START          Run BarScanner.exe (starts fullscreen).
+SHORTCUTS      F11 toggle fullscreen, Esc exit fullscreen, Ctrl+Q quit.
+DATA LOCATION  C:\Users\<you>\.cac_scanner\  (settings + all logs).
+               Replacing BarScanner.exe with a newer build does NOT
+               touch this folder - configuration survives upgrades.
+
+DAILY USE  (Scanner tab)
+1. The verdict banner says "Ready to scan" in white. Cursor must be
+   in the input box (auto-refocuses on tab change / startup).
+2. Scan a CAC. The banner flashes:
+     GREEN "ALLOWED - Nth drink"  - eligible; this scan IS counted.
+     RED   "DENIED" + reason      - banned, closed, category/branch
+                                    not allowed, or limit reached.
+                                    NOT counted.
+     RED   "INVALID SCAN"         - barcode malformed; try again.
+3. Decoded grid below shows EDIPI, Category, Branch, drink count.
+4. "Clear" only blanks the display - it does NOT undo a count.
+
+UNLOCKING SETTINGS
+Hours / Limits / Roster / Banned / Backup-Import tabs are LOCKED by
+default (red banner). Click "Unlock" - prompts for 2 DIFFERENT CACs.
+Both EDIPIs and every edit are written to the public audit log.
+Click "Lock" to re-lock manually.
+
+AUTO-LOCK
+Settings re-lock automatically 5 minutes after unlock. Status bar
+shows "Auto-locks in 5 minutes" when you unlock.
+
+HOURS  (Hours tab)
+- Operating hours: set Open / Close (HH:MM 24-h). Drinks count only
+  inside the window. Open == Close = 24h day. Close < Open crosses
+  midnight (e.g. 20:00 -> 02:30).
+- Rolling window: counts the last N hours regardless of clock; bar
+  is never "closed" by clock in this mode.
+
+LIMITS  (Limits tab)    Max drinks per session per EDIPI. Default 3.
+
+ROSTER  (Roster tab)    Check the Categories (PCC) and Branches that
+                        may drink. Use All / None for bulk toggle.
+
+BANS  (Banned tab)      Add EDIPI (10 digits). Optional Expires as
+                        YYYYMMDD; blank = permanent. Bans override
+                        category / branch / limit. "Remove selected"
+                        lifts a ban.
+
+RESET  (Reset tab)      Wipes every EDIPI's count to 0 for the
+                        current window. Requires 2 distinct CACs.
+                        Each reset is logged publicly.
+
+BACKUP  (Backup tab)
+- Export full backup: anyone can save a .zip of all settings + logs.
+  The file CONTAINS EDIPIs and the ban list - protect it.
+- Import full backup: requires unlock. REPLACES all settings and
+  logs on this machine. Cannot be undone without another backup.
+
+LOGS  (Logs tab)        Public, append-only record of every unlock,
+                        change, lock, reset, export, and import with
+                        timestamps and authorizing EDIPIs. Cannot
+                        be edited or deleted.
+
+TROUBLESHOOTING
+- Scans go to wrong field: click the input box on Scanner tab.
+- Settings won't edit: click Unlock, scan 2 different CACs.
+- Lost backup file: copy C:\Users\<you>\.cac_scanner\ manually.
+================================================================
