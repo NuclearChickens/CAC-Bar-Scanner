@@ -2002,8 +2002,12 @@ class App(tk.Tk):
 
 
 def main() -> None:
-    # If we were re-spawned with admin rights to write the all-users
-    # Start menu shortcut, do that and exit without bringing up the GUI.
+    # Windows runs the registered UninstallString (BarScanner.exe --uninstall)
+    # when the user picks Uninstall from the Start menu / Add-Remove Programs.
+    # Handle that branch before we try to bring the GUI up.
+    if start_menu.handle_uninstall_cli():
+        return
+    # Elevated child writing the install (ACL + shortcut + registry).
     if start_menu.handle_elevated_install_cli():
         return
     _enable_windows_dpi_awareness()
