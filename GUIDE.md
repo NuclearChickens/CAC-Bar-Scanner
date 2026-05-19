@@ -1,226 +1,306 @@
 # Using CAC Bar Scanner
 
-## Installing and launching from the Start menu
+A step-by-step guide for operators and admins. Keep this open next to the
+kiosk or print the PDF (the **📄 Printable PDF** button on the
+[repo front page](https://github.com/NuclearChickens/CAC-Bar-Scanner)).
 
-CAC Bar Scanner is a single self-contained program — there is no
-separate installer to download. Click the one-click download link on
-the [repo's front page](https://github.com/NuclearChickens/CAC-Bar-Scanner)
-(the **⬇ Download BarScanner.exe** button near the top of the README)
-or use this direct link:
-<https://github.com/NuclearChickens/CAC-Bar-Scanner/raw/main/BarScanner.exe>.
-Your browser will save it to your **Downloads** folder by default —
-that's exactly where you want it. Open File Explorer, click
-**Downloads** in the left-hand sidebar, and you'll see
-`BarScanner.exe` sitting there. Double-click it to run. The first
-time you launch, Windows may pop up a blue box that says *"Windows
-protected your PC"* — this is normal for any program that isn't sold
-through the Microsoft Store. Click the small **More info** link in
-that box and then the **Run anyway** button that appears; Windows
-will remember your choice and won't ask again. As soon as the app
-opens it asks whether to install for this PC — click **Install**.
-Windows will then pop up a blue *User Account Control* permission
-box, and you click **Yes**. With that one prompt the app:
+---
 
-- copies itself into `C:\Program Files\CAC Bar Scanner\` so the Start
-  menu has a permanent home for it,
-- adds itself to the Start menu (and Settings → Apps) for every user
-  on the computer,
-- and sets up a shared folder at `C:\ProgramData\CACBarScanner\` so
-  every operator who logs in sees the same configuration and scan
-  history.
+## At a glance
 
-After that you can safely delete the copy in Downloads — the Start
-menu and taskbar use the Program Files copy. To launch the app any
-time, tap the Windows key, type "Bar", and press Enter.
+| Tab        | What it's for                                                |
+| ---------- | ------------------------------------------------------------ |
+| **Scanner**| The main screen. Verdict on every CAC swipe.                 |
+| **Hours**  | When the bar is "open" — operating hours or rolling window.  |
+| **Limits** | Max drinks per person per session.                           |
+| **Roster** | Which DoD categories and branches are allowed to drink.      |
+| **Banned** | Specific DoD IDs that are denied no matter what.             |
+| **Reset**  | Wipe today's drink counts (requires two CACs).               |
+| **Logs**   | Read-only history of every admin action.                     |
+| **Backup** | Export or import settings + logs.                            |
 
-If you click **Not now** instead of Install, the app still runs from
-wherever you double-clicked it, just without a Start menu entry or
-the shared configuration folder. The install offer doesn't reappear
-for the same Windows user, but if a different user logs in and runs
-the exe, they'll get the same prompt. Once anyone clicks **Install**,
-the offer is dismissed for every user on the PC.
+All settings tabs are **locked by default**. Two different CAC swipes
+unlock them for 5 minutes. See **[Unlocking settings](#unlocking-settings)**.
 
-## Uninstalling
+---
 
-Two ways:
+## Install — step by step
 
-- Open **Settings → Apps → Installed apps**, scroll to or search for
-  **CAC Bar Scanner**, click the **⋯** menu next to it, and choose
-  **Uninstall**.
-- Or open the **Start menu**, find **CAC Bar Scanner**, right-click
-  the entry, and choose **Uninstall**.
+The first time you set up a PC. You need admin rights on the machine.
 
-Either way Windows runs the app one last time in uninstall mode. A
-small dialog appears with a single checkbox: **Also delete settings,
-ban list, and all logs**. Leave it unchecked to remove just the
-program (keeping your configuration so a future reinstall picks it
-back up); tick it for a full wipe. Click **Uninstall** and approve
-the User Account Control prompt. The Start menu entry, the Add/Remove
-Programs listing, and the `C:\Program Files\CAC Bar Scanner\` folder
-are all cleaned up — the folder finishes deleting itself on the next
-reboot, which is normal Windows behavior since the running
-uninstaller can't delete itself in real time.
+1. **Download the app.** Click the **⬇ Download BarScanner.exe**
+   button on the [repo front page](https://github.com/NuclearChickens/CAC-Bar-Scanner).
+   Your browser saves it to your **Downloads** folder.
 
-## The Scanner tab
+2. **Open it.** Open File Explorer → **Downloads** → double-click
+   `BarScanner.exe`.
 
-This is the main screen and where the cashier or door staff lives all
-night. A big white banner sits at the top reading **Ready to scan**.
-The cursor is already parked in the input box beneath it — leave it
-there. When a CAC is swiped across the USB scanner, the 18-character
-barcode types itself into the box automatically and the verdict
-appears within a fraction of a second:
+3. **Tell Windows to trust it.** If you see a blue *"Windows protected
+   your PC"* box, click **More info** → **Run anyway**. (This appears
+   because the app isn't code-signed, not because anything is wrong.
+   Windows remembers your choice.)
 
-- **ALLOWED** (green banner). The person is cleared. The banner shows
-  which drink number this is for them (e.g. *"3rd drink"*) along with
-  their category and branch. The scan is counted toward their limit.
-- **DENIED** (red banner). The person is not cleared. The banner
-  shows the reason in plain English — for example *"You've had 3
-  drinks today (limit 3)"*, *"Bar is closed (outside operating
-  hours)"*, *"Active Duty (AD) not allowed"*, or *"This DoD ID is
-  banned until 2026-12-31"*. Denied scans are **not** counted, so
-  someone can't burn through their limit by trying again.
-- **INVALID SCAN** (red banner). The scanner read something that
-  doesn't look like a CAC barcode. Usually means the card was swiped
-  too fast or at a bad angle — just try again. Nothing is recorded.
+4. **Click "Install" in the first-run dialog.** When the app opens
+   for the first time it asks if it should install for this PC.
 
-Below the banner the **Decoded** box shows the DoD ID, category, and
-branch of whoever was just scanned, plus a running count of how many
-drinks they've had in the current session. The bottom of the screen
-shows the current operating window (e.g. *"Open: 17:00–02:00"*) so
-you can confirm at a glance that the right rules are in effect.
+5. **Approve the UAC prompt.** A blue *User Account Control* box from
+   Windows pops up — click **Yes**.
 
-If the input box ever loses focus — say someone clicked away by
-accident — just click anywhere on the Scanner tab and it pops back.
-The **Clear** button at the bottom blanks out the last decoded
-result, which is handy between customers.
+6. **You're done.** With that one click the app:
+    - copied itself into `C:\Program Files\CAC Bar Scanner\`,
+    - added itself to the Start menu for every user on the computer,
+    - set up the shared data folder at `C:\ProgramData\CACBarScanner\`,
+    - registered itself in **Settings → Apps** so it can be uninstalled cleanly.
 
-## The Hours tab — when the bar counts
+> 💡 **Tip:** Once installed, you can safely delete the copy in
+> Downloads. The Start menu and taskbar use the Program Files copy.
 
-This tab controls *when* drinks are counted. There are two modes:
+### "Not now" instead of Install
 
-- **Operating hours** (default). You set an open time and a close
-  time in 24-hour format. While the bar is open, every allowed scan
-  counts toward that person's session total. When the close time
-  passes, the bar enters *closed* state, scans are denied with
-  *"Bar is closed"*, and counts reset automatically at the next
-  open. If you leave both fields at `00:00`, the app treats the bar
-  as open 24 hours.
-- **Rolling window**. Instead of bar hours, you set a window length
-  in hours (1 to 168). Each person's count is based on however many
-  drinks they've had in the last *N* hours — sliding continuously.
-  Good for events that don't have fixed open/close times.
+If you click **Not now**, the app still runs but only from wherever
+you double-clicked it, without a Start menu entry or shared data
+folder. The dialog won't reappear for the same Windows account, but
+will appear the next time *a different* user logs in and tries the
+app. Once anyone clicks **Install**, the offer is dismissed for
+everyone.
 
-Switching between modes is a single radio button at the top of the
-tab. The fields that don't apply to the current mode are hidden so
-you don't accidentally edit them.
+---
 
-## The Limits tab — drinks per person
+## Launching the app
+
+After install, the easiest way:
+
+1. Tap the **Windows key**.
+2. Type **Bar**.
+3. Press **Enter**.
+
+The app comes up fullscreen. Press **F11** to toggle fullscreen,
+**Esc** to exit fullscreen, **Ctrl + Q** to quit.
+
+---
+
+## Scanner tab — the main screen
+
+This is where staff live all night. The cursor is parked in the input
+box; leave it there. When a CAC is swiped, the 18-character barcode
+types itself in and a verdict appears in under a second.
+
+### The three verdicts
+
+| Banner             | Meaning                                                        | Counted? |
+| ------------------ | -------------------------------------------------------------- | -------- |
+| 🟢 **ALLOWED**     | Person is cleared. Banner shows which drink number this is.    | Yes      |
+| 🔴 **DENIED**      | Plain-English reason: limit reached, bar closed, banned, etc.  | No       |
+| 🔴 **INVALID SCAN**| Scanner read garbage. Usually a bad swipe — try again.         | No       |
+
+Denied scans are **not** counted, so a person can't burn through
+their limit by trying again. Invalid scans aren't recorded at all.
+
+### What else is on the screen
+
+- **Decoded box** — DoD ID, category, branch of the last person
+  scanned, plus a running drink count.
+- **Session line at the bottom** — current operating window (e.g.
+  *"Open 17:00 → 02:00"*) so you can confirm the right rules are
+  in effect at a glance.
+- **Clear button** — blanks the last decoded result. Handy between
+  customers if you want a clean screen.
+
+If the input box ever loses focus (someone clicked away), just click
+anywhere on the Scanner tab and it pops back to the input.
+
+---
+
+## Hours tab — when the bar counts
+
+Controls *when* drinks are counted. Two modes:
+
+| Mode                | What it does                                                              |
+| ------------------- | ------------------------------------------------------------------------- |
+| **Operating hours** | Set an open and close time. Counts reset automatically at next open.      |
+| **Rolling window**  | Count drinks scanned in the last *N* hours (1 – 168). Slides continuously.|
+
+Switch with the radio button at the top. Fields for the other mode
+are hidden so you can't edit them by accident.
+
+> 💡 **Tip:** If you leave Open and Close both at `00:00` in
+> Operating-hours mode, the app treats the bar as open 24 hours.
+
+---
+
+## Limits tab — drinks per person
 
 One number: the maximum drinks any single person can be served in a
-session. Default is 3. Once a person hits that number, every
-subsequent scan from them flashes red with *"You've had N drinks
-today (limit N)"* until either the session ends (Operating hours
-mode), the rolling window slides past their earlier drinks (Rolling
-mode), or you do a manual reset on the Reset tab.
+session. Default is **3**.
 
-## The Roster tab — who's eligible
+Once a person hits the limit, every subsequent scan from them flashes
+red with *"You've had N drinks today (limit N)"* until:
 
-Two side-by-side checklists:
+- the session ends (Operating-hours mode), or
+- the rolling window slides past their earlier drinks (Rolling mode), or
+- you do a **manual reset** on the [Reset tab](#reset-tab--wipe-todays-counts).
 
-- **Categories (PCC)** — Active Duty, Reserve, Retiree, Dependent,
-  Contractor, etc.
-- **Branches** — Army, Navy, Marines, Air Force, Space Force, Coast
-  Guard, and the various civilian/contractor codes.
+---
 
-A scan is allowed only if **both** its category and branch are
-checked here. **All** and **None** buttons at the top of each
-column flip every box at once, which is handy when you want to
-start from "deny everything" and tick on just the few you want, or
-vice versa.
+## Roster tab — who's eligible
 
-## The Banned tab — block specific people
+Two side-by-side checklists. A scan is allowed only if **both** its
+category and branch are checked.
 
-Sometimes you need to deny one specific person regardless of the
-roster. Type their 10-digit DoD ID into the **EDIPI** box. Leave the
-**Expires** box blank for a permanent ban, or type 8 digits as
-`YYYYMMDD` (e.g. `20261231` for "until 31 December 2026"). Click
-**Add**. Bans show up in the list above; click one and hit **Remove
-selected** to lift it. Expired bans show **(EXPIRED)** next to them
-in the list but stop denying scans automatically on their expiry
-date — you don't have to remember to remove them.
+| Column                 | Examples                                                |
+| ---------------------- | ------------------------------------------------------- |
+| **Categories (PCC)**   | Active Duty, Reserve, Retiree, Dependent, Contractor    |
+| **Branches**           | Army, Navy, Marines, Air Force, Space Force, Coast Guard|
 
-## The Reset tab — wipe today's counts
+Each column has **All** and **None** buttons that flip every box at
+once — handy for "deny everything and tick on just the few I want."
 
-This is for moments like a shift change or a manual "start the night
-over". Click **Reset drinks for the day**; the tab asks for two
-different CAC scans to confirm. After both authorizers swipe, every
-existing drink count is cleared and the reset shows up in the
-**Public reset log** below — that log is permanent and lists who
-authorized each reset along with the date and time, so there's
-always an accountability trail.
+---
 
-## The Logs tab — what happened and when
+## Banned tab — block specific people
 
-A read-only feed of every administrative event: unlocks, lock-outs,
-settings changes, ban additions/removals, manual resets, and
-backup exports. You cannot edit or delete entries. Hit **Refresh**
-to reload after something just happened. This is the place to look
-when someone asks "who changed the limit last Thursday?".
+Deny one specific DoD ID regardless of the roster.
 
-## The Backup tab — saving and restoring
+1. Type their **10-digit EDIPI** in the EDIPI box.
+2. Optionally type an **expiry date** as `YYYYMMDD` (e.g. `20261231`
+   for "until 31 December 2026"). Leave blank for a permanent ban.
+3. Click **Add**.
 
-The app keeps all of its settings, the ban list, and every log under
-`C:\ProgramData\CACBarScanner\` on Windows (`~/.cac_scanner/` on
-Linux/macOS). This is a **shared** folder — every Windows user on
-the kiosk PC sees the same hours, limits, roster, bans, and scan
-history, so any operator who launches the app picks up exactly the
-same configuration. Updating BarScanner does not touch that folder,
-so your setup survives upgrades. The Backup tab is there for two
-cases:
+To lift a ban: click the entry in the list, hit **Remove selected**.
+Expired bans display **(EXPIRED)** in the list but stop denying scans
+automatically on their expiry date — no manual cleanup needed.
 
-- **Export full backup** packs everything into a single `.zip` file.
-  Stash it somewhere safe (the file contains DoD IDs and the ban
-  list — treat it like an HR document).
-- **Import full backup** is for moving your setup to another
-  machine, or for restoring after a disk failure. It **completely
-  replaces** the current settings and logs on the machine — there's
-  a confirmation dialog before anything is overwritten. Import is
-  hidden behind the same 2-CAC unlock as other admin actions.
+---
 
-## Unlocking settings (the lock banner)
+## Reset tab — wipe today's counts
 
-For everyday scanning you don't need to do anything special — the
-Scanner tab is always available. Anything that changes configuration
-(Hours, Limits, Roster, Banned, Backup → Import) sits behind a lock.
-Each of those tabs shows a pink banner at the top reading **LOCKED —
-scan 2 CACs to enable editing.** Click **Unlock**, a small window
-pops up, and two different people swipe their CACs through the
-scanner. The banner turns green showing which two IDs authorized the
-session. From that point you have **5 minutes** to make changes
-before the app auto-locks again; you can also press the **Lock**
-button to lock it back immediately. Everything you change while
-unlocked is recorded in the Logs tab against both authorizers.
+For shift changes or a manual "start the night over."
 
-## Handy keyboard shortcuts
+1. Click **Reset drinks for the day**.
+2. The first authorizer scans their CAC.
+3. The second authorizer (must be different) scans theirs.
+4. All drink counts are wiped immediately.
 
-- **F11** — toggle fullscreen (kiosk mode)
-- **Esc** — exit fullscreen
-- **Ctrl+Q** — quit the app
-- **Enter** — finish a scan manually (most scanners do this for you)
+Every reset is recorded in the **Public reset log** below — that log
+is permanent and lists both authorizers with the date and time. The
+log can't be edited or deleted. This is your accountability trail.
+
+---
+
+## Logs tab — what happened and when
+
+A read-only feed of every admin event:
+
+- Unlocks and locks
+- Settings changes (with before/after values)
+- Bans added or removed
+- Manual resets
+- Backup exports
+
+You can't edit or delete entries. Hit **Refresh** to reload after
+something just happened. This is the place to look when someone asks
+*"who changed the limit last Thursday?"*
+
+---
+
+## Backup tab — export and import
+
+The Backup tab does two things:
+
+| Action                  | Requires unlock? | Notes                                               |
+| ----------------------- | ---------------- | --------------------------------------------------- |
+| **Export full backup**  | No               | Saves a `.zip` of every setting + log.              |
+| **Import full backup**  | Yes (2 CACs)     | Overwrites all settings and logs on this machine.   |
+
+> ⚠️ **Heads up:** Exported backups contain DoD IDs and the ban list.
+> Treat the `.zip` like an HR document — keep it somewhere safe.
+
+> ⚠️ **Import is destructive.** It **replaces** the current settings
+> and logs with the backup. There's a confirmation dialog before
+> anything is overwritten, but there's no undo afterward.
+
+---
+
+## Unlocking settings
+
+For everyday scanning, the Scanner tab is always available. Anything
+that changes configuration sits behind a lock:
+
+- Hours
+- Limits
+- Roster
+- Banned
+- Backup → Import
+
+Each locked tab shows a pink banner reading **LOCKED — scan 2 CACs
+to enable editing.**
+
+### How to unlock
+
+1. Click **Unlock** on the banner.
+2. A small popup appears. The first authorizer scans their CAC.
+3. The second authorizer (must be different) scans theirs.
+4. The banner turns green and shows both IDs.
+5. You have **5 minutes** to make changes before the app auto-locks.
+6. Click **Lock** on the banner to lock immediately.
+
+Every change you make while unlocked is recorded in the
+[Logs tab](#logs-tab--what-happened-and-when) against both
+authorizing IDs.
+
+---
+
+## Keyboard shortcuts
+
+| Key            | What it does                                              |
+| -------------- | --------------------------------------------------------- |
+| **F11**        | Toggle fullscreen (kiosk mode)                            |
+| **Esc**        | Exit fullscreen                                           |
+| **Ctrl + Q**   | Quit the app                                              |
+| **Enter**      | Finish a scan manually (most USB scanners do this for you)|
+
+---
 
 ## Where the app stores its data
 
 Everything lives in **`C:\ProgramData\CACBarScanner\`** — Windows's
-standard location for machine-wide application data. The folder is
-created during the one-time admin install and granted read/write
-access for every user on the PC, which is what makes the
-configuration shared:
+standard machine-wide application-data folder. The folder is set up
+during install with read/write access for every user on the PC,
+which is what makes the configuration shared.
 
-- `settings.json` — your configuration
-- `scans.jsonl` — running drink counts
-- `audit.jsonl` — settings changes
-- `resets.jsonl` — manual resets
+| File             | What's in it                                              |
+| ---------------- | --------------------------------------------------------- |
+| `settings.json`  | Hours, limits, roster, ban list — your configuration.     |
+| `scans.jsonl`    | Running drink counts (one record per scan).               |
+| `audit.jsonl`    | Every admin action — unlocks, changes, resets, exports.   |
+| `resets.jsonl`   | Every manual drink reset, with both authorizing IDs.      |
 
 You don't normally need to touch any of these — the app reads and
-writes them automatically and the Backup tab is the supported way
-to copy or restore them.
+writes them automatically. The **Backup** tab is the supported way
+to copy or move them.
+
+---
+
+## Uninstalling
+
+Two ways to start uninstall:
+
+- **Settings → Apps → Installed apps** → find **CAC Bar Scanner** →
+  click the **⋯** menu → **Uninstall**.
+- Or in the **Start menu**, right-click **CAC Bar Scanner** → **Uninstall**.
+
+Either way:
+
+1. Windows runs the app one last time in uninstall mode.
+2. A small dialog asks whether to also delete settings + logs.
+    - **Leave unchecked** to keep the data (a future reinstall picks
+      back up where you left off).
+    - **Tick the box** for a complete wipe.
+3. Click **Uninstall** in the dialog.
+4. Approve the UAC prompt with **Yes**.
+
+The Start menu entry, Add/Remove Programs listing, and
+`C:\Program Files\CAC Bar Scanner\` folder are all cleaned up. The
+folder finishes deleting itself on the next reboot — that's normal
+Windows behavior (the running uninstaller can't delete itself in
+real time).
