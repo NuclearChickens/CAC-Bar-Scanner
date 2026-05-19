@@ -1852,14 +1852,15 @@ class App(tk.Tk):
         self._reset_banner()
         self.entry.focus_set()
 
-    # -------------------------------------------------- Start menu install
+    # ---------------------------------------------------- Machine install
 
     def _maybe_offer_start_menu_install(self) -> None:
-        """Show the first-run "Add to Start menu?" dialog at most once.
+        """Show the first-run install dialog at most once.
 
         Skipped on non-Windows, when running from source (not a frozen
-        exe), when the prompt has already been shown, or when a
-        shortcut already exists somewhere."""
+        exe), when the prompt has already been shown, or when the
+        all-users Start menu shortcut already exists (a sign that
+        somebody already installed)."""
         if sys.platform != "win32":
             return
         if not getattr(sys, "frozen", False):
@@ -1869,7 +1870,7 @@ class App(tk.Tk):
         if start_menu.shortcut_exists():
             self._record_start_menu_decision()
             return
-        self._open_start_menu_dialog()
+        self._open_install_dialog()
 
     def _record_start_menu_decision(self) -> None:
         """Persist that we've prompted, so we never ask again."""
@@ -1882,92 +1883,79 @@ class App(tk.Tk):
             pass
         self.settings = new
 
-    def _open_start_menu_dialog(self) -> None:
+    def _open_install_dialog(self) -> None:
         dlg = tk.Toplevel(self)
-        dlg.title("Add to Start menu?")
+        dlg.title("Install for this PC?")
         dlg.transient(self)
         dlg.resizable(False, False)
         dlg.configure(padx=self._px(24), pady=self._px(24))
 
         ttk.Label(
             dlg,
-            text="Add CAC Bar Scanner to your Windows Start menu?",
+            text="Install CAC Bar Scanner for this PC?",
             font=self.F_LABEL,
-        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, self._px(6)))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, self._px(6)))
 
         ttk.Label(
             dlg,
             text=(
-                "Then next time you can launch it just by tapping the\n"
-                "Windows key and typing \"Bar\"."
+                "This sets up a shared folder so every operator on the\n"
+                "computer sees the same configuration and scan history,\n"
+                "and adds CAC Bar Scanner to the Start menu for everyone."
             ),
             font=self.F_BODY,
             justify="left",
-        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, self._px(16)))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, self._px(16)))
 
         def finish(message: str, ok: bool) -> None:
             self._record_start_menu_decision()
             self._set_status(message, ok=ok)
             dlg.destroy()
 
-        def on_just_me() -> None:
-            res = start_menu.install_current_user()
-            if res == start_menu.InstallResult.OK:
-                finish("Added to Start menu for the current user.", True)
-            else:
-                finish(
-                    "Could not add to Start menu — sorry, please pin it "
-                    "manually from File Explorer.",
-                    False,
-                )
-
-        def on_everyone() -> None:
+        def on_install() -> None:
             # Withdraw while UAC is up so the dialog isn't stuck behind it.
             dlg.withdraw()
-            res = start_menu.install_all_users()
+            res = start_menu.install_for_machine()
             if res == start_menu.InstallResult.OK:
-                finish("Added to Start menu for everyone on this PC.", True)
+                finish("Installed for everyone on this PC.", True)
             elif res == start_menu.InstallResult.CANCELLED:
                 finish("Cancelled — no changes were made.", False)
             else:
                 finish(
-                    "Could not add for all users — try \"Just me\" instead, "
-                    "or run the exe as administrator.",
+                    "Install failed. Try right-clicking BarScanner.exe "
+                    "and choosing \"Run as administrator\".",
                     False,
                 )
 
         def on_skip() -> None:
             finish(
-                "Skipped. You can always pin BarScanner.exe to Start manually.",
+                "Skipped. Run BarScanner.exe as administrator later to "
+                "finish setup.",
                 True,
             )
 
         btns = ttk.Frame(dlg)
-        btns.grid(row=2, column=0, columnspan=3, sticky="ew")
+        btns.grid(row=2, column=0, columnspan=2, sticky="ew")
         btns.columnconfigure(0, weight=1)
         btns.columnconfigure(1, weight=1)
-        btns.columnconfigure(2, weight=1)
-        ttk.Button(btns, text="Just me", command=on_just_me).grid(
+        ttk.Button(btns, text="Install", command=on_install).grid(
             row=0, column=0, sticky="ew", padx=(0, self._px(8))
         )
-        ttk.Button(
-            btns, text="Everyone on this PC", command=on_everyone
-        ).grid(row=0, column=1, sticky="ew", padx=(0, self._px(8)))
         ttk.Button(btns, text="Not now", command=on_skip).grid(
-            row=0, column=2, sticky="ew"
+            row=0, column=1, sticky="ew"
         )
 
         ttk.Label(
             dlg,
             text=(
-                "\"Everyone on this PC\" will ask Windows for permission "
-                "(a blue User Account Control prompt). Click Yes when it appears."
+                "Windows will pop up a blue \"User Account Control\" "
+                "permission box — click Yes when it appears."
             ),
             font=self.F_TIP,
             justify="left",
             foreground="#555555",
             wraplength=self._px(520),
-        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(self._px(14), 0))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(self._px(14), 0))
 
         # Modal: grab keystrokes (the barcode scanner is just a keyboard
         # from Tk's perspective) so a stray scan doesn't fire the wrong
@@ -1988,9 +1976,6 @@ def main() -> None:
     # Start menu shortcut, do that and exit without bringing up the GUI.
     if start_menu.handle_elevated_install_cli():
         return
-    # One-shot migration from ~/.cac_scanner/ to the shared data dir.
-    # No-op on Linux/macOS and on second+ launches.
-    settings_mod.migrate_legacy_data()
     _enable_windows_dpi_awareness()
     App().mainloop()
 

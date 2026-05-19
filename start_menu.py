@@ -1,22 +1,30 @@
-"""Create a Windows Start menu shortcut to BarScanner.exe.
+"""One-time admin install for CAC Bar Scanner on Windows.
 
-PyInstaller --onefile exes don't go through an installer, so the user
-has no Start menu entry until they manually pin one. On first launch
-the GUI offers two install scopes:
+A single-file PyInstaller exe has no installer step, so the kiosk
+needs a one-time bootstrap to:
 
-    * current_user — writes a .lnk to %APPDATA%\\...\\Start Menu\\Programs.
-      No admin rights required.
-    * all_users   — writes a .lnk to %PROGRAMDATA%\\...\\Start Menu\\Programs.
-      Requires admin. If the running process isn't elevated we re-launch
-      the same exe with ``--install-system-shortcut`` via ShellExecuteEx
-      with the ``runas`` verb, which fires a UAC prompt; the elevated
-      child writes the shortcut and exits.
+    1. Provision the shared data directory at
+       ``C:\\ProgramData\\CACBarScanner\\`` with an explicit
+       Authenticated Users: Modify ACL so every operator on the
+       machine can read and write the settings, ban list, and logs.
+    2. Drop a Start menu shortcut in the all-users location at
+       ``C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\``
+       so the app appears for every user when they tap the Windows
+       key and start typing "Bar".
 
-Implementation note: the .lnk file is created via PowerShell's
-WScript.Shell COM bridge (one liner) instead of binding the IShellLink
-COM interface ourselves through ctypes. PowerShell ships with every
-Windows release since Vista, so no third-party deps and no fragile
-80-line COM dance.
+Both actions require admin rights, so the GUI's install dialog
+re-launches the same exe with ``--install-for-machine`` via
+``ShellExecuteEx`` with the ``runas`` verb — Windows shows a UAC
+prompt, and the elevated child performs the install and exits.
+
+Implementation:
+    * Shortcuts are written through PowerShell's WScript.Shell COM
+      bridge (a few lines) rather than binding IShellLink ourselves.
+    * The ACL is set with ``icacls.exe`` using the well-known SID for
+      Authenticated Users (``*S-1-5-11``) so the call is robust on
+      machines with localized account names.
+    * No third-party Python deps; PowerShell and icacls ship with
+      every Windows release since Vista.
 """
 from __future__ import annotations
 
@@ -26,28 +34,31 @@ import sys
 from enum import Enum
 from pathlib import Path
 
+import settings as settings_mod
+
 
 APP_NAME = "CAC Bar Scanner"
 SHORTCUT_FILENAME = f"{APP_NAME}.lnk"
-ELEVATED_INSTALL_FLAG = "--install-system-shortcut"
+ELEVATED_INSTALL_FLAG = "--install-for-machine"
+
+# Well-known SID for "Authenticated Users". Using the SID rather than
+# the display name keeps the icacls call working on Windows installs
+# with a non-English UI.
+AUTHENTICATED_USERS_SID = "*S-1-5-11"
+
+# CREATE_NO_WINDOW — suppress the console flash from PowerShell /
+# icacls subprocesses when running a windowed PyInstaller build.
+_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 class InstallResult(Enum):
     OK = "ok"
-    CANCELLED = "cancelled"   # user clicked No on the UAC prompt
+    CANCELLED = "cancelled"     # user clicked No on UAC
     FAILED = "failed"
     UNSUPPORTED = "unsupported"  # not running on Windows
 
 
 # ---------------------------------------------------------------- paths
-
-def current_user_start_menu() -> Path:
-    """``%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs``"""
-    appdata = os.environ.get("APPDATA") or str(
-        Path(os.environ.get("USERPROFILE", "")) / "AppData" / "Roaming"
-    )
-    return Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs"
-
 
 def all_users_start_menu() -> Path:
     """``%PROGRAMDATA%\\Microsoft\\Windows\\Start Menu\\Programs``"""
@@ -56,26 +67,89 @@ def all_users_start_menu() -> Path:
 
 
 def shortcut_exists() -> bool:
-    """True if either a per-user or all-users shortcut already exists."""
-    return (
-        (current_user_start_menu() / SHORTCUT_FILENAME).exists()
-        or (all_users_start_menu() / SHORTCUT_FILENAME).exists()
-    )
+    """True if the all-users shortcut already exists."""
+    return (all_users_start_menu() / SHORTCUT_FILENAME).exists()
 
 
 def _exe_path() -> str:
     """Path the shortcut should point at: the running BarScanner.exe.
 
     For a frozen PyInstaller exe that's ``sys.executable``; for a
-    source-tree run we fall back to ``argv[0]`` (shortcut install is
-    only offered for frozen builds, but the fallback keeps imports
-    safe in dev)."""
+    source-tree run we fall back to ``argv[0]`` so dev imports stay
+    safe even though the install flow isn't offered there."""
     if getattr(sys, "frozen", False):
         return sys.executable
     return os.path.abspath(sys.argv[0])
 
 
-# ---------------------------------------------------------------- writers
+# ---------------------------------------------------------------- elevation
+
+def is_elevated() -> bool:
+    """Whether the current process has admin rights."""
+    if sys.platform != "win32":
+        return False
+    try:
+        import ctypes
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except Exception:
+        return False
+
+
+def install_for_machine() -> InstallResult:
+    """One-shot install: provision the shared data dir + drop the
+    all-users Start menu shortcut. Requires admin rights.
+
+    If the current process isn't already elevated, re-spawn the same
+    exe with ``--install-for-machine`` via ShellExecuteEx(runas);
+    Windows shows a UAC prompt and, if accepted, the elevated child
+    does the work and exits. Returns CANCELLED if the user clicks No
+    on the UAC prompt."""
+    if sys.platform != "win32":
+        return InstallResult.UNSUPPORTED
+
+    if is_elevated():
+        try:
+            _do_machine_install()
+            return InstallResult.OK
+        except Exception:
+            return InstallResult.FAILED
+
+    return _spawn_elevated_helper()
+
+
+# ---------------------------------------------------------------- the install
+
+def _do_machine_install() -> None:
+    """Run the privileged half of the install. Caller must be elevated."""
+    data_dir = settings_mod.SETTINGS_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
+    _grant_authenticated_users_modify(data_dir)
+    _create_shortcut(
+        _exe_path(), all_users_start_menu() / SHORTCUT_FILENAME
+    )
+
+
+def _grant_authenticated_users_modify(folder: Path) -> None:
+    """Grant ``Authenticated Users`` Modify access on ``folder`` with
+    object + container inheritance so every file beneath it (existing
+    and future) is read/writable by any logged-in user on the PC.
+
+    ``/grant:r`` replaces any existing grant for the principal so
+    re-running the install is idempotent. ``/T`` recurses through
+    existing children, which matters when an earlier non-admin
+    launch already populated the folder."""
+    subprocess.run(
+        [
+            "icacls", str(folder),
+            "/grant:r", f"{AUTHENTICATED_USERS_SID}:(OI)(CI)M",
+            "/T",
+            "/C",  # keep going on per-file errors
+            "/Q",  # quiet
+        ],
+        check=True,
+        creationflags=_NO_WINDOW,
+    )
+
 
 def _create_shortcut(target: str, lnk_path: Path) -> None:
     """Drop a .lnk file at ``lnk_path`` pointing at ``target``.
@@ -100,12 +174,6 @@ def _create_shortcut(target: str, lnk_path: Path) -> None:
 
     lnk_path.parent.mkdir(parents=True, exist_ok=True)
 
-    creationflags = 0
-    if sys.platform == "win32":
-        # CREATE_NO_WINDOW — suppress the PowerShell console flash for
-        # users running a windowed (no-console) PyInstaller build.
-        creationflags = 0x08000000
-
     subprocess.run(
         [
             "powershell.exe",
@@ -115,61 +183,14 @@ def _create_shortcut(target: str, lnk_path: Path) -> None:
             "-Command", script,
         ],
         check=True,
-        creationflags=creationflags,
+        creationflags=_NO_WINDOW,
     )
 
 
-# ---------------------------------------------------------------- elevation
-
-def is_elevated() -> bool:
-    """Whether the current process has admin rights."""
-    if sys.platform != "win32":
-        return False
-    try:
-        import ctypes
-        return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
-        return False
-
-
-def install_current_user() -> InstallResult:
-    """Write the .lnk into the current user's Start menu. No UAC."""
-    if sys.platform != "win32":
-        return InstallResult.UNSUPPORTED
-    try:
-        _create_shortcut(
-            _exe_path(), current_user_start_menu() / SHORTCUT_FILENAME
-        )
-        return InstallResult.OK
-    except Exception:
-        return InstallResult.FAILED
-
-
-def install_all_users() -> InstallResult:
-    """Write the .lnk into the all-users Start menu.
-
-    Requires admin. If the current process isn't elevated, re-spawn
-    ourselves with --install-system-shortcut via ShellExecuteEx(runas);
-    Windows shows a UAC prompt and, if accepted, the elevated child
-    drops the shortcut and exits. Returns CANCELLED if the user clicks
-    No on the UAC prompt."""
-    if sys.platform != "win32":
-        return InstallResult.UNSUPPORTED
-
-    if is_elevated():
-        try:
-            _create_shortcut(
-                _exe_path(), all_users_start_menu() / SHORTCUT_FILENAME
-            )
-            return InstallResult.OK
-        except Exception:
-            return InstallResult.FAILED
-
-    return _spawn_elevated_helper()
-
+# ---------------------------------------------------------------- runas helper
 
 def _spawn_elevated_helper() -> InstallResult:
-    """ShellExecuteEx(runas) the same exe with --install-system-shortcut,
+    """ShellExecuteEx(runas) the same exe with --install-for-machine,
     wait for it, and translate its exit code into an InstallResult."""
     import ctypes
     from ctypes import wintypes
@@ -207,11 +228,10 @@ def _spawn_elevated_helper() -> InstallResult:
     info.lpParameters = ELEVATED_INSTALL_FLAG
     info.nShow        = SW_HIDE
 
-    shell32 = ctypes.windll.shell32
+    shell32  = ctypes.windll.shell32
     kernel32 = ctypes.windll.kernel32
 
     if not shell32.ShellExecuteExW(ctypes.byref(info)):
-        # GetLastError == ERROR_CANCELLED when the user clicked No on UAC.
         if ctypes.get_last_error() == ERROR_CANCELLED:
             return InstallResult.CANCELLED
         return InstallResult.FAILED
@@ -230,16 +250,16 @@ def _spawn_elevated_helper() -> InstallResult:
 
 
 def handle_elevated_install_cli() -> bool:
-    """If we were spawned with ``--install-system-shortcut``, do the
-    all-users install and ``sys.exit`` with 0 on success, 1 on failure.
+    """If we were spawned with ``--install-for-machine``, run the
+    privileged install and ``sys.exit`` (0 on success, 1 on failure).
 
-    Returns False (and does nothing) if the flag isn't present, so
-    callers can ``if handle_elevated_install_cli(): return`` at the top
-    of main() and otherwise proceed normally."""
+    Returns False if the flag isn't present so callers can do
+    ``if handle_elevated_install_cli(): return`` at the top of main()
+    and otherwise proceed to bring up the GUI."""
     if ELEVATED_INSTALL_FLAG not in sys.argv:
         return False
     try:
-        _create_shortcut(_exe_path(), all_users_start_menu() / SHORTCUT_FILENAME)
+        _do_machine_install()
         sys.exit(0)
     except Exception:
         sys.exit(1)
