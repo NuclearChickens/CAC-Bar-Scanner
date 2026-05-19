@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import sys
 import tkinter as tk
+from dataclasses import replace
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -31,6 +32,7 @@ import audit_log
 import backup
 import reset_log
 import settings as settings_mod
+import start_menu
 from cac_decoder import BRANCHES, BARCODE_LEN, CATEGORIES, InvalidBarcode, decode
 from scan_log import count_since, prune_before, record_scan
 
@@ -144,6 +146,10 @@ class App(tk.Tk):
         self._prune_log()
         self.entry.focus_set()
         self.after(self.REFRESH_MS, self._tick)
+        # Offer to add ourselves to the Start menu once, on the first
+        # launch of a frozen Windows build. Deferred so the main window
+        # is fully drawn before the prompt appears on top of it.
+        self.after(250, self._maybe_offer_start_menu_install)
 
         self.bind("<F11>", self._toggle_fullscreen)
         self.bind("<Escape>", self._exit_fullscreen)
@@ -1844,8 +1850,142 @@ class App(tk.Tk):
         self._reset_banner()
         self.entry.focus_set()
 
+    # -------------------------------------------------- Start menu install
+
+    def _maybe_offer_start_menu_install(self) -> None:
+        """Show the first-run "Add to Start menu?" dialog at most once.
+
+        Skipped on non-Windows, when running from source (not a frozen
+        exe), when the prompt has already been shown, or when a
+        shortcut already exists somewhere."""
+        if sys.platform != "win32":
+            return
+        if not getattr(sys, "frozen", False):
+            return
+        if self.settings.start_menu_prompt_shown:
+            return
+        if start_menu.shortcut_exists():
+            self._record_start_menu_decision()
+            return
+        self._open_start_menu_dialog()
+
+    def _record_start_menu_decision(self) -> None:
+        """Persist that we've prompted, so we never ask again."""
+        new = replace(self.settings, start_menu_prompt_shown=True)
+        try:
+            settings_mod.save(new)
+        except OSError:
+            # If we can't persist, the worst case is we ask again next
+            # launch — not worth crashing the GUI over.
+            pass
+        self.settings = new
+
+    def _open_start_menu_dialog(self) -> None:
+        dlg = tk.Toplevel(self)
+        dlg.title("Add to Start menu?")
+        dlg.transient(self)
+        dlg.resizable(False, False)
+        dlg.configure(padx=self._px(24), pady=self._px(24))
+
+        ttk.Label(
+            dlg,
+            text="Add CAC Bar Scanner to your Windows Start menu?",
+            font=self.F_LABEL,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, self._px(6)))
+
+        ttk.Label(
+            dlg,
+            text=(
+                "Then next time you can launch it just by tapping the\n"
+                "Windows key and typing \"Bar\"."
+            ),
+            font=self.F_BODY,
+            justify="left",
+        ).grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, self._px(16)))
+
+        def finish(message: str, ok: bool) -> None:
+            self._record_start_menu_decision()
+            self._set_status(message, ok=ok)
+            dlg.destroy()
+
+        def on_just_me() -> None:
+            res = start_menu.install_current_user()
+            if res == start_menu.InstallResult.OK:
+                finish("Added to Start menu for the current user.", True)
+            else:
+                finish(
+                    "Could not add to Start menu — sorry, please pin it "
+                    "manually from File Explorer.",
+                    False,
+                )
+
+        def on_everyone() -> None:
+            # Withdraw while UAC is up so the dialog isn't stuck behind it.
+            dlg.withdraw()
+            res = start_menu.install_all_users()
+            if res == start_menu.InstallResult.OK:
+                finish("Added to Start menu for everyone on this PC.", True)
+            elif res == start_menu.InstallResult.CANCELLED:
+                finish("Cancelled — no changes were made.", False)
+            else:
+                finish(
+                    "Could not add for all users — try \"Just me\" instead, "
+                    "or run the exe as administrator.",
+                    False,
+                )
+
+        def on_skip() -> None:
+            finish(
+                "Skipped. You can always pin BarScanner.exe to Start manually.",
+                True,
+            )
+
+        btns = ttk.Frame(dlg)
+        btns.grid(row=2, column=0, columnspan=3, sticky="ew")
+        btns.columnconfigure(0, weight=1)
+        btns.columnconfigure(1, weight=1)
+        btns.columnconfigure(2, weight=1)
+        ttk.Button(btns, text="Just me", command=on_just_me).grid(
+            row=0, column=0, sticky="ew", padx=(0, self._px(8))
+        )
+        ttk.Button(
+            btns, text="Everyone on this PC", command=on_everyone
+        ).grid(row=0, column=1, sticky="ew", padx=(0, self._px(8)))
+        ttk.Button(btns, text="Not now", command=on_skip).grid(
+            row=0, column=2, sticky="ew"
+        )
+
+        ttk.Label(
+            dlg,
+            text=(
+                "\"Everyone on this PC\" will ask Windows for permission "
+                "(a blue User Account Control prompt). Click Yes when it appears."
+            ),
+            font=self.F_TIP,
+            justify="left",
+            foreground="#555555",
+            wraplength=self._px(520),
+        ).grid(row=3, column=0, columnspan=3, sticky="w", pady=(self._px(14), 0))
+
+        # Modal: grab keystrokes (the barcode scanner is just a keyboard
+        # from Tk's perspective) so a stray scan doesn't fire the wrong
+        # button. Also close on Escape so a quick keyboard user can bail.
+        dlg.protocol("WM_DELETE_WINDOW", on_skip)
+        dlg.bind("<Escape>", lambda _e: on_skip())
+        dlg.grab_set()
+        # Center over the parent window.
+        self.update_idletasks()
+        dlg.update_idletasks()
+        x = self.winfo_rootx() + (self.winfo_width() - dlg.winfo_width()) // 2
+        y = self.winfo_rooty() + (self.winfo_height() - dlg.winfo_height()) // 3
+        dlg.geometry(f"+{max(x, 0)}+{max(y, 0)}")
+
 
 def main() -> None:
+    # If we were re-spawned with admin rights to write the all-users
+    # Start menu shortcut, do that and exit without bringing up the GUI.
+    if start_menu.handle_elevated_install_cli():
+        return
     _enable_windows_dpi_awareness()
     App().mainloop()
 
