@@ -22,8 +22,7 @@ Ubuntu install `python3-tk`).
 python3 cac_gui.py
 ```
 
-There are no third-party deps for the GUI itself. The optional doc-build
-helpers (`build_printable.py`, `build_sop_pdf.py`) need `reportlab`.
+There are no third-party deps.
 
 Keys:
 - `F11` — toggle fullscreen
@@ -68,7 +67,6 @@ docker compose up -d            # boots Windows, installs Python+PyInstaller
 | ---------------- | ----------------------------------------------------- |
 | `cac_gui.py`     | Tk application — Notebook with Scanner / Hours / Limits / Roster / Banned tabs |
 | `cac_decoder.py` | Parses an 18-char CAC Code 39 barcode into fields     |
-| `cac_code39.py`  | Code 39 charset helpers                               |
 | `settings.py`    | Persisted config (hours, limits, roster, banned)      |
 | `scan_log.py`    | Per-scan record + count-since-date queries            |
 | `audit_log.py`   | Append-only audit trail of admin actions              |
