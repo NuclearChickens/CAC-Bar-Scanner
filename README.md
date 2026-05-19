@@ -30,10 +30,6 @@ Keys:
 
 ## Build the `.exe` yourself
 
-Two paths.
-
-### Native: build directly on Windows
-
 On a Windows machine, install Python 3.12 from
 [python.org](https://www.python.org/downloads/) — tick **Add python.exe to
 PATH** in the installer. Open a fresh Command Prompt (so it picks up the
@@ -44,16 +40,6 @@ The finished binary lands at `dist\BarScanner.exe` — copy it anywhere and
 double-click. No virtualenv needed; the GUI has no third-party deps, so
 PyInstaller is the only pip install required. Tk ships with the standard
 python.org installer, so there's nothing extra to add for the GUI itself.
-
-### Fast: Wine in Docker (~1 minute after first pull)
-
-```bash
-./build_exe.sh
-```
-
-Produces `dist/BarScanner.exe`. Uses `batonogov/pyinstaller-windows`; first
-run pulls the image (~2 GB). PyInstaller is **not** a cross-compiler — this
-runs real PyInstaller inside Wine inside Linux.
 
 ## Source layout
 
@@ -66,5 +52,4 @@ runs real PyInstaller inside Wine inside Linux.
 | `audit_log.py`   | Append-only audit trail of admin actions              |
 | `reset_log.py`   | Periodic log rollover                                 |
 | `backup.py`      | Settings + log backup/restore                         |
-| `build_exe.sh`   | Wine-in-Docker build script                           |
 | `BarScanner.spec`| PyInstaller spec (single-file, windowed)              |
