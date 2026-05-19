@@ -35,7 +35,7 @@ import settings as settings_mod
 import start_menu
 import version
 from cac_decoder import BRANCHES, BARCODE_LEN, CATEGORIES, InvalidBarcode, decode
-from scan_log import count_since, prune_before, record_scan
+from scan_log import count_since, count_total_since, prune_before, record_scan
 
 
 # ---------------------------------------------------------------- palette
@@ -176,10 +176,7 @@ class App(tk.Tk):
         self._committing = False
         self._last_decoded_edipi: str | None = None
         self._fullscreen = False
-        self._reset_state: str = "idle"      # "idle" | "first" | "second"
-        self._reset_first_edipi: str | None = None
         self._settings_unlocked: bool = False
-        self._unlock_authorizers: tuple[str, str] | None = None
         self._pre_edit_settings: settings_mod.Settings | None = None
         self._lockable_content_frames: list[tk.Misc] = []
         self._lock_banners: list[tuple[tk.Frame, tk.Label, ttk.Button]] = []
@@ -567,16 +564,35 @@ class App(tk.Tk):
 
         bottom = ttk.Frame(tab)
         bottom.grid(row=5, column=0, sticky="ew", pady=(self._px(12), 0))
-        bottom.columnconfigure(0, weight=1)
+        bottom.columnconfigure(1, weight=1)
+
+        # Running tally of allowed scans within the current counting window
+        # — the bartender's "how many drinks have we served tonight?" number.
+        # Only ALLOWED scans are recorded (denied/invalid don't count), so
+        # this matches the audit-able served-drinks total at a glance.
+        self._drinks_count_var = tk.StringVar(value="Drinks served: 0")
+        self._drinks_count_lbl = ttk.Label(
+            bottom,
+            textvariable=self._drinks_count_var,
+            font=self.F_LABEL,
+            foreground=BLACK,
+        )
+        self._drinks_count_lbl.grid(row=0, column=0, sticky="w")
+
         self._tip_lbl = ttk.Label(
             bottom,
             text="Tip: keep the input box focused. F11 toggles fullscreen, Esc exits.",
             font=self.F_TIP,
             foreground=BLACK,
         )
-        self._tip_lbl.grid(row=0, column=0, sticky="ew")
+        self._tip_lbl.grid(
+            row=0,
+            column=1,
+            sticky="ew",
+            padx=(self._px(16), self._px(16)),
+        )
         ttk.Button(bottom, text="Clear", command=self._clear).grid(
-            row=0, column=1, sticky="e"
+            row=0, column=2, sticky="e"
         )
 
     # -------------------------------------------------------- Hours tab
@@ -990,14 +1006,9 @@ class App(tk.Tk):
         """Sync every lock banner to the current global lock state."""
         for banner, lbl, btn in self._lock_banners:
             if self._settings_unlocked:
-                who = (
-                    " + ".join(self._unlock_authorizers)
-                    if self._unlock_authorizers
-                    else "—"
-                )
                 banner.configure(bg=UNLOCKED_BG)
                 lbl.configure(
-                    text=f"UNLOCKED — authorized by {who}",
+                    text="UNLOCKED — auto-locks 5 minutes after unlock.",
                     bg=UNLOCKED_BG,
                     fg=GREEN,
                 )
@@ -1005,7 +1016,7 @@ class App(tk.Tk):
             else:
                 banner.configure(bg=LOCKED_BG)
                 lbl.configure(
-                    text="LOCKED — scan 2 CACs to enable editing.",
+                    text="LOCKED — enter the admin password to enable editing.",
                     bg=LOCKED_BG,
                     fg=RED,
                 )
@@ -1045,18 +1056,13 @@ class App(tk.Tk):
         # Compute and log any settings changes that happened during this
         # unlock session, then log the lock event itself.
         self._cancel_auto_lock()
-        if (
-            self._settings_unlocked
-            and self._pre_edit_settings is not None
-            and self._unlock_authorizers is not None
-        ):
+        if self._settings_unlocked and self._pre_edit_settings is not None:
             for change in self._diff_settings(
                 self._pre_edit_settings, self.settings
             ):
-                audit_log.record_change(self._unlock_authorizers, change)
-            audit_log.record_lock(self._unlock_authorizers)
+                audit_log.record_change(change)
+            audit_log.record_lock()
         self._settings_unlocked = False
-        self._unlock_authorizers = None
         self._pre_edit_settings = None
         self._apply_lock_state()
         self._refresh_logs()
@@ -1096,7 +1102,11 @@ class App(tk.Tk):
         self, old: settings_mod.Settings, new: settings_mod.Settings
     ) -> list[str]:
         """Return a list of human-readable change descriptions, one per
-        differing field. Empty list if nothing changed."""
+        differing field. Empty list if nothing changed.
+
+        ``admin_password_hash`` is intentionally not in the diff list:
+        password changes get their own audit entry from
+        ``_change_password`` so the hash never leaks into the log."""
         changes: list[str] = []
         for field in (
             "tracking_mode",
@@ -1147,9 +1157,9 @@ class App(tk.Tk):
         self.destroy()
 
     def _open_unlock_dialog(self) -> None:
-        """Show a modal Toplevel that requires 2 distinct CAC scans to
-        unlock the settings widgets. Reuses the same flow as the reset
-        tab's auth, but in a popup so it can be triggered from any tab."""
+        """Show a modal password prompt. Verifying the admin password
+        unlocks every settings tab, the manual reset, and the backup
+        import for the next 5 minutes (or until manually locked)."""
         if self._settings_unlocked:
             return
 
@@ -1159,166 +1169,131 @@ class App(tk.Tk):
         dlg.resizable(False, False)
         dlg.configure(padx=self._px(24), pady=self._px(24))
 
-        flow = {"step": "first", "first_edipi": None}
-
         ttk.Label(
             dlg,
-            text="Two distinct CACs are required to enable editing.",
+            text="Enter the admin password to enable editing.",
             font=self.F_BODY,
-        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(10)))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, self._px(10)))
 
-        prompt_var = tk.StringVar(value="Scan first authorizer CAC:")
-        ttk.Label(dlg, textvariable=prompt_var, font=self.F_LABEL).grid(
+        ttk.Label(dlg, text="Password:", font=self.F_LABEL).grid(
             row=1, column=0, sticky="w", pady=(0, self._px(6))
         )
 
-        input_var = tk.StringVar()
+        pw_var = tk.StringVar()
         entry = ttk.Entry(
-            dlg, textvariable=input_var, font=self.F_ENTRY, justify="center", width=24
+            dlg,
+            textvariable=pw_var,
+            font=self.F_ENTRY,
+            show="•",
+            width=24,
         )
-        entry.grid(row=2, column=0, sticky="ew", pady=(0, self._px(8)))
-
-        auth1_var = tk.StringVar(value="")
-        ttk.Label(dlg, textvariable=auth1_var, font=self.F_BODY).grid(
-            row=3, column=0, sticky="w", pady=(0, self._px(6))
+        entry.grid(
+            row=2, column=0, columnspan=2, sticky="ew", pady=(0, self._px(8))
         )
 
         err_var = tk.StringVar(value="")
         tk.Label(
             dlg, textvariable=err_var, font=self.F_BODY, fg=RED
-        ).grid(row=4, column=0, sticky="w", pady=(0, self._px(8)))
+        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, self._px(8)))
 
-        ttk.Button(dlg, text="Cancel", command=dlg.destroy).grid(
-            row=5, column=0, sticky="w"
-        )
-
-        # The dialog is grab_set'd so keystrokes from the barcode scanner
-        # land in this entry rather than in the main window.
-        dlg.grab_set()
-        entry.focus_set()
-
-        def process(raw: str) -> None:
-            input_var.set("")
-            try:
-                decoded = decode(raw)
-            except InvalidBarcode as e:
-                err_var.set(f"Invalid scan: {e}")
+        def submit(_event: tk.Event | None = None) -> str:
+            pw = pw_var.get()
+            if not pw:
+                err_var.set("Enter the password.")
                 entry.focus_set()
-                return
-            err_var.set("")
-            if flow["step"] == "first":
-                flow["first_edipi"] = decoded.edipi
-                flow["step"] = "second"
-                auth1_var.set(f"Authorizer 1: {decoded.edipi}")
-                prompt_var.set("Scan second authorizer CAC (must be different):")
+                return "break"
+            if not self.settings.verify_admin_password(pw):
+                err_var.set("Incorrect password.")
+                pw_var.set("")
                 entry.focus_set()
-                return
-            if decoded.edipi == flow["first_edipi"]:
-                err_var.set("Second CAC must be different from the first.")
-                entry.focus_set()
-                return
-            edipi1 = flow["first_edipi"]
-            edipi2 = decoded.edipi
+                return "break"
             self._settings_unlocked = True
-            self._unlock_authorizers = (edipi1, edipi2)
             self._pre_edit_settings = self.settings  # snapshot for diffing
-            audit_log.record_unlock(edipi1, edipi2)
+            audit_log.record_unlock()
             self._apply_lock_state()
             self._refresh_logs()
             self._schedule_auto_lock()
             self._set_status(
-                f"Settings unlocked, authorized by {edipi1} + {edipi2}. "
-                f"Auto-locks in 5 minutes.",
-                ok=True,
+                "Settings unlocked. Auto-locks in 5 minutes.", ok=True
             )
             dlg.destroy()
-
-        def on_input_changed(*_: object) -> None:
-            text = input_var.get().strip().upper()
-            if len(text) >= BARCODE_LEN:
-                process(text[-BARCODE_LEN:])
-
-        def on_enter(_event: tk.Event) -> str:
-            text = input_var.get().strip().upper()
-            if text:
-                process(text)
             return "break"
 
-        input_var.trace_add("write", on_input_changed)
-        entry.bind("<Return>", on_enter)
+        btns = ttk.Frame(dlg)
+        btns.grid(row=4, column=0, columnspan=2, sticky="w")
+        ttk.Button(btns, text="Unlock", command=submit).pack(side="left")
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(
+            side="left", padx=(self._px(8), 0)
+        )
+
+        dlg.grab_set()
+        entry.focus_set()
+        entry.bind("<Return>", submit)
 
     # -------------------------------------------------------- Reset tab
 
     def _build_reset_tab(self) -> None:
-        f = ttk.Frame(self.notebook, padding=self._px(28))
-        self.notebook.add(f, text="Reset")
-        f.columnconfigure(0, weight=1)
-        f.rowconfigure(2, weight=1)
+        f = self._make_lockable_tab("Reset")
+        f.rowconfigure(3, weight=1)
 
         ttk.Label(
             f,
             text=(
                 "Wipe every EDIPI's drink count for the current window.\n"
-                "Two distinct CAC scans are required to authorize the reset.\n"
                 "Every reset is appended to the public log below and cannot be removed."
             ),
             font=self.F_BODY,
             justify="left",
         ).grid(row=0, column=0, sticky="w", pady=(0, self._px(12)))
 
-        # Action area: holds either the start button (idle) or the auth form.
-        self.reset_action_frame = ttk.Frame(f)
-        self.reset_action_frame.grid(row=1, column=0, sticky="ew", pady=(0, self._px(16)))
-        self.reset_action_frame.columnconfigure(0, weight=1)
-
-        self.reset_start_btn = ttk.Button(
-            self.reset_action_frame,
+        ttk.Button(
+            f,
             text="Reset drinks for the day",
-            command=self._reset_start,
+            command=self._reset_drinks,
+        ).grid(row=1, column=0, sticky="w", pady=(0, self._px(20)))
+
+        # Admin password change — only reachable when unlocked, so the
+        # operator who can change the password has already proven they
+        # know the current one.
+        pw_frame = ttk.LabelFrame(
+            f, text="Change admin password", padding=self._px(14)
         )
-        self.reset_start_btn.grid(row=0, column=0, sticky="w")
+        pw_frame.grid(row=2, column=0, sticky="ew", pady=(0, self._px(16)))
+        pw_frame.columnconfigure(1, weight=1)
 
-        self.reset_form = ttk.LabelFrame(
-            self.reset_action_frame, text="Authorize reset", padding=self._px(14)
+        ttk.Label(pw_frame, text="New password:", font=self.F_LABEL).grid(
+            row=0, column=0, sticky="e", padx=(0, self._px(12)), pady=self._px(4)
         )
-        self.reset_form.columnconfigure(0, weight=1)
+        self.new_pw_var = tk.StringVar()
+        ttk.Entry(
+            pw_frame,
+            textvariable=self.new_pw_var,
+            show="•",
+            width=24,
+            font=self.F_VALUE_BOLD,
+        ).grid(row=0, column=1, sticky="w", pady=self._px(4))
 
-        self.reset_prompt_var = tk.StringVar(value="Scan first authorizer CAC:")
-        ttk.Label(
-            self.reset_form, textvariable=self.reset_prompt_var, font=self.F_LABEL
-        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(6)))
-
-        self.reset_input_var = tk.StringVar()
-        self.reset_entry = ttk.Entry(
-            self.reset_form,
-            textvariable=self.reset_input_var,
-            font=self.F_ENTRY,
-            justify="center",
+        ttk.Label(pw_frame, text="Confirm:", font=self.F_LABEL).grid(
+            row=1, column=0, sticky="e", padx=(0, self._px(12)), pady=self._px(4)
         )
-        self.reset_entry.grid(row=1, column=0, sticky="ew", pady=(0, self._px(8)))
-        self.reset_entry.bind("<Return>", self._on_reset_enter)
-        self.reset_input_var.trace_add("write", self._on_reset_input_changed)
-
-        self.reset_authorizers_var = tk.StringVar(value="")
-        ttk.Label(
-            self.reset_form, textvariable=self.reset_authorizers_var, font=self.F_BODY
-        ).grid(row=2, column=0, sticky="w", pady=(0, self._px(6)))
-
-        self.reset_error_var = tk.StringVar(value="")
-        ttk.Label(
-            self.reset_form,
-            textvariable=self.reset_error_var,
-            font=self.F_BODY,
-            foreground=RED,
-        ).grid(row=3, column=0, sticky="w", pady=(0, self._px(8)))
+        self.confirm_pw_var = tk.StringVar()
+        ttk.Entry(
+            pw_frame,
+            textvariable=self.confirm_pw_var,
+            show="•",
+            width=24,
+            font=self.F_VALUE_BOLD,
+        ).grid(row=1, column=1, sticky="w", pady=self._px(4))
 
         ttk.Button(
-            self.reset_form, text="Cancel", command=self._reset_cancel
-        ).grid(row=4, column=0, sticky="w")
+            pw_frame,
+            text="Change password",
+            command=self._change_password,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(self._px(10), 0))
 
-        # Public log
+        # Public reset log
         log_frame = ttk.LabelFrame(f, text="Public reset log", padding=self._px(14))
-        log_frame.grid(row=2, column=0, sticky="nsew")
+        log_frame.grid(row=3, column=0, sticky="nsew")
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -1345,82 +1320,70 @@ class App(tk.Tk):
             return
         for ts, e1, e2 in entries:
             local = ts.astimezone()
-            self.reset_log_box.insert(
-                "end", f"  {local:%Y-%m-%d %H:%M}   by {e1}  +  {e2}"
-            )
+            # Legacy two-CAC entries carry the authorizing EDIPIs; new
+            # password-era entries just record the timestamp.
+            if e1 and e2:
+                line = f"  {local:%Y-%m-%d %H:%M}   by {e1}  +  {e2}"
+            else:
+                line = f"  {local:%Y-%m-%d %H:%M}   by admin"
+            self.reset_log_box.insert("end", line)
 
-    def _reset_start(self) -> None:
-        self._reset_state = "first"
-        self._reset_first_edipi = None
-        self.reset_prompt_var.set("Scan first authorizer CAC:")
-        self.reset_authorizers_var.set("")
-        self.reset_error_var.set("")
-        self.reset_input_var.set("")
-        self.reset_start_btn.grid_remove()
-        self.reset_form.grid(row=0, column=0, sticky="ew")
-        self.reset_entry.focus_set()
-
-    def _reset_cancel(self) -> None:
-        self._reset_state = "idle"
-        self._reset_first_edipi = None
-        self.reset_input_var.set("")
-        self.reset_form.grid_remove()
-        self.reset_start_btn.grid(row=0, column=0, sticky="w")
-
-    def _on_reset_input_changed(self, *_: object) -> None:
-        if self._reset_state == "idle":
+    def _reset_drinks(self) -> None:
+        """Wipe every EDIPI's count for the current window. Button is
+        disabled when the tab is locked, so reaching here implies the
+        admin password was already accepted via the lock banner."""
+        if not self._settings_unlocked:
+            self._set_status("Settings must be unlocked to reset.", ok=False)
             return
-        text = self.reset_input_var.get().strip().upper()
-        if len(text) >= BARCODE_LEN:
-            self._process_reset_scan(text[-BARCODE_LEN:])
-
-    def _on_reset_enter(self, _event: tk.Event) -> str:
-        if self._reset_state == "idle":
-            return "break"
-        text = self.reset_input_var.get().strip().upper()
-        if text:
-            self._process_reset_scan(text)
-        return "break"
-
-    def _process_reset_scan(self, raw: str) -> None:
-        self.reset_input_var.set("")
-        try:
-            decoded = decode(raw)
-        except InvalidBarcode as e:
-            self.reset_error_var.set(f"Invalid scan: {e}")
-            self.reset_entry.focus_set()
+        if not messagebox.askyesno(
+            "Confirm reset",
+            (
+                "Reset every EDIPI's drink count for the current window?\n\n"
+                "This cannot be undone."
+            ),
+            parent=self,
+        ):
             return
-        self.reset_error_var.set("")
-        if self._reset_state == "first":
-            self._reset_first_edipi = decoded.edipi
-            self._reset_state = "second"
-            self.reset_authorizers_var.set(f"Authorizer 1: {decoded.edipi}")
-            self.reset_prompt_var.set(
-                "Scan second authorizer CAC (must be different):"
-            )
-            self.reset_entry.focus_set()
-            return
-        if self._reset_state == "second":
-            if decoded.edipi == self._reset_first_edipi:
-                self.reset_error_var.set(
-                    "Second CAC must be different from the first."
-                )
-                self.reset_entry.focus_set()
-                return
-            edipi1 = self._reset_first_edipi
-            edipi2 = decoded.edipi
-            reset_log.record_reset(edipi1, edipi2)
-            self._reset_state = "idle"
-            self._reset_first_edipi = None
-            self.reset_form.grid_remove()
-            self.reset_start_btn.grid(row=0, column=0, sticky="w")
-            self._refresh_reset_log()
-            self._prune_log()              # drop scans before the reset
-            self._refresh_session_label()  # update banner / labels
-            self._refresh_logs()
+        reset_log.record_reset()
+        self._refresh_reset_log()
+        self._prune_log()              # drop scans before the reset
+        self._refresh_session_label()  # update banner / labels / counter
+        self._refresh_logs()
+        self._set_status("Drinks reset.", ok=True)
+
+    def _change_password(self) -> None:
+        """Replace the stored admin-password hash. Both new + confirm
+        fields must match and clear the minimum length floor."""
+        if not self._settings_unlocked:
             self._set_status(
-                f"Drinks reset, authorized by {edipi1} + {edipi2}.", ok=True
+                "Settings must be unlocked to change the password.", ok=False
             )
+            return
+        new = self.new_pw_var.get()
+        confirm = self.confirm_pw_var.get()
+        if not new:
+            self._set_status("Enter a new password.", ok=False)
+            return
+        if len(new) < settings_mod.MIN_PASSWORD_LEN:
+            self._set_status(
+                f"Password must be at least {settings_mod.MIN_PASSWORD_LEN} characters.",
+                ok=False,
+            )
+            return
+        if new != confirm:
+            self._set_status("Passwords do not match.", ok=False)
+            return
+        new_settings = self.settings.with_admin_password(new)
+        settings_mod.save(new_settings)
+        self.settings = new_settings
+        # Realign the diff baseline so a subsequent lock doesn't try to
+        # emit the hash change through the field-by-field diff.
+        self._pre_edit_settings = new_settings
+        self.new_pw_var.set("")
+        self.confirm_pw_var.set("")
+        audit_log.record_change("admin password changed")
+        self._refresh_logs()
+        self._set_status("Admin password changed.", ok=True)
 
     # --------------------------------------------------------- Logs tab
 
@@ -1474,7 +1437,12 @@ class App(tk.Tk):
             except (KeyError, ValueError):
                 continue
         for ts, e1, e2 in reset_log.list_resets():
-            entries.append((ts, {"action": "reset", "authorizers": [e1, e2]}))
+            # Only attach authorizers when the (legacy) record carried both;
+            # password-era resets are bare timestamps -> rendered as "by admin".
+            rec = {"action": "reset"}
+            if e1 and e2:
+                rec["authorizers"] = [e1, e2]
+            entries.append((ts, rec))
         entries.sort(key=lambda x: x[0], reverse=True)
 
         if not entries:
@@ -1484,16 +1452,19 @@ class App(tk.Tk):
         for ts, rec in entries:
             local = ts.astimezone()
             action = str(rec.get("action", "?")).upper()
+            # Legacy two-CAC entries carry an `authorizers` list of EDIPIs;
+            # new password-era entries just say "by admin".
             auths = rec.get("authorizers")
-            auths_str = " + ".join(auths) if auths else "—"
+            by_str = " + ".join(auths) if auths else "admin"
             when = f"{local:%Y-%m-%d %H:%M}"
             if action == "CHANGE":
                 change = rec.get("change", "")
-                line = f"  {when}  {action:<7}  {change}   (by {auths_str})"
-            elif action == "LOCK" and not auths:
-                line = f"  {when}  {action:<7}"
+                line = f"  {when}  {action:<7}  {change}   (by {by_str})"
+            elif action == "EXPORT":
+                dest = rec.get("dest", "")
+                line = f"  {when}  {action:<7}  {dest}"
             else:
-                line = f"  {when}  {action:<7}  by {auths_str}"
+                line = f"  {when}  {action:<7}  by {by_str}"
             self.logs_box.insert("end", line)
 
     # ------------------------------------------------------- Backup tab
@@ -1518,9 +1489,15 @@ class App(tk.Tk):
             justify="left",
         ).grid(row=0, column=0, sticky="ew", pady=(0, self._px(18)))
 
+        # PC install — always available, re-triggers the same flow as the
+        # first-run dialog. Useful when the dialog was dismissed, or when
+        # the install ran but the user can't find the Start menu shortcut
+        # and wants to re-verify or repair the install.
+        self._build_install_section(tab, row=1)
+
         # Export — always available, no unlock required.
         export_frame = ttk.LabelFrame(tab, text="Export", padding=self._px(14))
-        export_frame.grid(row=1, column=0, sticky="ew", pady=(0, self._px(18)))
+        export_frame.grid(row=2, column=0, sticky="ew", pady=(0, self._px(18)))
         export_frame.columnconfigure(0, weight=1)
         ttk.Label(
             export_frame,
@@ -1538,14 +1515,14 @@ class App(tk.Tk):
             command=self._on_export_backup,
         ).grid(row=1, column=0, sticky="w")
 
-        # Import — gated by the same 2-CAC unlock as other settings tabs.
-        # Add a lock banner at row 2 and put the import controls in a
-        # content frame registered with _lockable_content_frames so the
-        # existing _apply_lock_state machinery enables/disables them.
-        self._add_lock_banner(tab, row=2)
+        # Import — gated by the same admin-password unlock as other
+        # settings tabs. Lock banner at row 3, content at row 4 (we
+        # pushed both down by one to make room for the install section
+        # at row 1).
+        self._add_lock_banner(tab, row=3)
 
         import_content = ttk.Frame(tab)
-        import_content.grid(row=3, column=0, sticky="nsew")
+        import_content.grid(row=4, column=0, sticky="nsew")
         import_content.columnconfigure(0, weight=1)
         self._lockable_content_frames.append(import_content)
 
@@ -1570,6 +1547,157 @@ class App(tk.Tk):
             command=self._on_import_backup,
         ).grid(row=1, column=0, sticky="w")
 
+    # ----------------------------------------------------- PC install
+
+    def _build_install_section(self, parent: tk.Misc, row: int) -> None:
+        """Always-visible "Install for this PC" controls on the Backup tab.
+
+        Exists so a user who dismissed the first-run dialog (or whose
+        install seemed to succeed but didn't drop a Start menu entry)
+        can re-trigger the install at any time and verify exactly where
+        the shortcut is supposed to land. Hidden on non-Windows runs
+        and on source-tree runs since the install flow only makes sense
+        for a frozen Windows exe."""
+        # Only meaningful for the frozen Windows exe — Linux dev runs
+        # and source-tree runs don't have an install concept.
+        if sys.platform != "win32" or not getattr(sys, "frozen", False):
+            self._install_status_var = None
+            return
+
+        frame = ttk.LabelFrame(parent, text="PC install", padding=self._px(14))
+        frame.grid(row=row, column=0, sticky="ew", pady=(0, self._px(18)))
+        frame.columnconfigure(0, weight=1)
+
+        self._install_status_var = tk.StringVar()
+        ttk.Label(
+            frame,
+            textvariable=self._install_status_var,
+            font=self.F_BODY,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(10)))
+
+        # Show the expected shortcut path so the user can verify it
+        # exists in Explorer if Windows search hasn't picked it up yet.
+        shortcut_path = (
+            start_menu.all_users_start_menu() / start_menu.SHORTCUT_FILENAME
+        )
+        ttk.Label(
+            frame,
+            text=f"Shortcut path:\n    {shortcut_path}",
+            font=self.F_TIP,
+            justify="left",
+            foreground="#555555",
+        ).grid(row=1, column=0, sticky="w", pady=(0, self._px(10)))
+
+        btns = ttk.Frame(frame)
+        btns.grid(row=2, column=0, sticky="w")
+
+        self._install_btn = ttk.Button(
+            btns, text="Install for this PC…", command=self._on_manual_install
+        )
+        self._install_btn.pack(side="left")
+
+        self._open_startmenu_btn = ttk.Button(
+            btns,
+            text="Open Start menu folder",
+            command=self._on_open_start_menu_folder,
+        )
+        self._open_startmenu_btn.pack(side="left", padx=(self._px(8), 0))
+
+        self._uninstall_btn = ttk.Button(
+            btns, text="Uninstall…", command=self._on_manual_uninstall
+        )
+        self._uninstall_btn.pack(side="left", padx=(self._px(8), 0))
+
+        self._refresh_install_status()
+
+    def _refresh_install_status(self) -> None:
+        """Sync the status line + Reinstall/Uninstall button state to
+        what's actually present on disk + in the registry."""
+        if not getattr(self, "_install_status_var", None):
+            return
+        installed = start_menu.is_installed()
+        shortcut_there = start_menu.shortcut_exists()
+        if installed and shortcut_there:
+            self._install_status_var.set(
+                "Installed for this PC. Reinstall refreshes the shortcut and ACL."
+            )
+            self._install_btn.configure(text="Reinstall…")
+            self._uninstall_btn.state(["!disabled"])
+        elif installed and not shortcut_there:
+            # Registry says installed but the .lnk is gone — partial
+            # install or someone deleted the shortcut. Nudge to reinstall.
+            self._install_status_var.set(
+                "Registered as installed, but the Start menu shortcut is missing. "
+                "Click Reinstall to recreate it."
+            )
+            self._install_btn.configure(text="Reinstall…")
+            self._uninstall_btn.state(["!disabled"])
+        else:
+            self._install_status_var.set(
+                "Not installed for this PC. Install to add a Start menu "
+                "shortcut and an Apps & Features entry."
+            )
+            self._install_btn.configure(text="Install for this PC…")
+            self._uninstall_btn.state(["disabled"])
+
+    def _on_manual_install(self) -> None:
+        """Run the install flow on demand. Identical to clicking
+        Install in the first-run dialog; UAC handles the elevation."""
+        res = start_menu.install_for_machine()
+        if res == start_menu.InstallResult.OK:
+            shortcut = (
+                start_menu.all_users_start_menu() / start_menu.SHORTCUT_FILENAME
+            )
+            self._set_status(
+                f"Installed. Shortcut at {shortcut}.", ok=True
+            )
+        elif res == start_menu.InstallResult.CANCELLED:
+            self._set_status("Install cancelled.", ok=False)
+        elif res == start_menu.InstallResult.UNSUPPORTED:
+            self._set_status(
+                "Install is only available for the Windows exe.", ok=False
+            )
+        else:
+            self._set_status(
+                "Install failed — see the popup from the elevated step "
+                "for the exact reason.",
+                ok=False,
+            )
+        self._refresh_install_status()
+
+    def _on_manual_uninstall(self) -> None:
+        if not messagebox.askyesno(
+            "Confirm uninstall",
+            (
+                "Remove the Start menu shortcut and Apps & Features entry?\n\n"
+                "BarScanner.exe stays where it is and your settings, ban "
+                "list, and logs are kept."
+            ),
+            parent=self,
+        ):
+            return
+        res = start_menu.uninstall_for_machine(purge_data=False)
+        if res == start_menu.InstallResult.OK:
+            self._set_status(
+                "Uninstalled. The Program Files copy finishes deleting on next reboot.",
+                ok=True,
+            )
+        elif res == start_menu.InstallResult.CANCELLED:
+            self._set_status("Uninstall cancelled.", ok=False)
+        else:
+            self._set_status("Uninstall failed.", ok=False)
+        self._refresh_install_status()
+
+    def _on_open_start_menu_folder(self) -> None:
+        """Open the all-users Start menu folder in Explorer so the user
+        can verify the shortcut is (or isn't) there."""
+        folder = start_menu.all_users_start_menu()
+        try:
+            os.startfile(str(folder))
+        except (OSError, AttributeError) as e:
+            self._set_status(f"Couldn't open folder: {e}", ok=False)
+
     def _on_export_backup(self) -> None:
         default_name = f"cac_scanner_backup_{date.today():%Y-%m-%d}.zip"
         dest = filedialog.asksaveasfilename(
@@ -1591,7 +1719,7 @@ class App(tk.Tk):
         self._set_status(f"Exported to {dest}", ok=True)
 
     def _on_import_backup(self) -> None:
-        if not self._settings_unlocked or not self._unlock_authorizers:
+        if not self._settings_unlocked:
             # Button is disabled in this state, but be defensive.
             self._set_status("Settings must be unlocked to import.", ok=False)
             return
@@ -1613,9 +1741,7 @@ class App(tk.Tk):
         ):
             return
         try:
-            new_settings = backup.import_backup(
-                Path(src), self._unlock_authorizers
-            )
+            new_settings = backup.import_backup(Path(src))
         except (OSError, backup.BackupError) as e:
             self._set_status(f"Import failed: {e}", ok=False)
             return
@@ -1697,6 +1823,9 @@ class App(tk.Tk):
             bans=tuple(self._bans),
             tracking_mode=tracking_mode,
             rolling_hours=rolling,
+            # No widget binds the password hash — preserve the current
+            # value so saving an unrelated field doesn't blank it out.
+            admin_password_hash=self.settings.admin_password_hash,
         )
 
     def _commit_settings(self) -> None:
@@ -1735,8 +1864,6 @@ class App(tk.Tk):
             return
         if current == "Scanner":
             self.entry.focus_set()
-        elif current == "Reset" and self._reset_state != "idle":
-            self.reset_entry.focus_set()
         elif current == "Logs":
             self._refresh_logs()
 
@@ -1830,6 +1957,9 @@ class App(tk.Tk):
                     f"ALLOWED — {settings_mod.ordinal(shown_count)} drink",
                     f"{decoded.category} • {decoded.branch}",
                 )
+                # Bar-wide tally bumps on every allowed scan; deferred to
+                # after record_scan so the new row is included.
+                self._refresh_drinks_counter(now=now, window=window)
             else:
                 self._values["count"].set(
                     f"{current_count} / {self.settings.max_drinks}"
@@ -1868,6 +1998,10 @@ class App(tk.Tk):
             else:
                 self._count_label.configure(text="Drinks this session:")
 
+        # Keep the bottom-left drinks-served counter in sync with the
+        # window/reset boundary as well.
+        self._refresh_drinks_counter(now=now, window=window)
+
         descr = self.settings.describe_window()
         if window is None:
             self.session_lbl.configure(foreground=RED)
@@ -1888,6 +2022,36 @@ class App(tk.Tk):
         if local_reset is not None:
             text += f"  •  reset at {local_reset:%a %H:%M}"
         self.session_var.set(text)
+
+    def _refresh_drinks_counter(
+        self,
+        now: datetime | None = None,
+        window: tuple[datetime, datetime] | None = None,
+    ) -> None:
+        """Update the bottom-left tally to match the current window.
+
+        Counts every allowed scan in the scan log between the effective
+        window start (later of session/rolling-window start and most
+        recent reset) and now. Denied/invalid scans never enter the log,
+        so this is the bar-wide "drinks served" number."""
+        if not hasattr(self, "_drinks_count_var"):
+            return
+        if now is None:
+            now = datetime.now().astimezone()
+        if window is None:
+            window = self.settings.current_window(now)
+        if window is None:
+            self._drinks_count_var.set("Drinks served: 0  •  closed")
+            return
+        effective_since = self._effective_since(window[0])
+        total = count_total_since(effective_since, now)
+        if self.settings.is_rolling:
+            text = (
+                f"Drinks served (last {self.settings.rolling_hours}h): {total}"
+            )
+        else:
+            text = f"Drinks served: {total}"
+        self._drinks_count_var.set(text)
 
     def _clear(self) -> None:
         self._processing = True
@@ -1940,6 +2104,10 @@ class App(tk.Tk):
 
         def finish(message: str, ok: bool) -> None:
             self._set_status(message, ok=ok)
+            # Keep the Backup-tab install section's status in sync with
+            # whatever just happened (install succeeded, was cancelled,
+            # or the user clicked Not now).
+            self._refresh_install_status()
             dlg.destroy()
 
         def on_install() -> None:

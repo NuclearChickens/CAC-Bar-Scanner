@@ -3,18 +3,22 @@
 Stores one JSON record per event under the shared data directory
 (see ``settings.SETTINGS_DIR``) as ``audit.jsonl``:
 
-    {"ts": "...", "action": "unlock", "authorizers": ["1234567890", "..."]}
-    {"ts": "...", "action": "change", "authorizers": [...], "change": "max_drinks: 3 → 5"}
-    {"ts": "...", "action": "lock", "authorizers": ["1234567890", "..."]}
+    {"ts": "...", "action": "unlock"}
+    {"ts": "...", "action": "change", "change": "max_drinks: 3 → 5"}
+    {"ts": "...", "action": "lock"}
 
 Append-only. The audit log is the public record of who unlocked the
 settings and what they changed; it is never pruned.
+
+Legacy entries written before password auth replaced two-CAC integrity
+also carry an ``authorizers`` list of EDIPIs; the reader preserves
+those fields untouched so historical records still display correctly.
 """
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Iterator, Sequence
+from typing import Iterator
 
 from settings import SETTINGS_DIR as LOG_DIR
 
@@ -27,44 +31,22 @@ def _append(record: dict) -> None:
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def record_unlock(
-    edipi1: str, edipi2: str, when: datetime | None = None
-) -> datetime:
+def record_unlock(when: datetime | None = None) -> datetime:
     when = when or datetime.now(timezone.utc)
-    _append(
-        {
-            "ts": when.isoformat(),
-            "action": "unlock",
-            "authorizers": [edipi1, edipi2],
-        }
-    )
+    _append({"ts": when.isoformat(), "action": "unlock"})
     return when
 
 
-def record_lock(
-    authorizers: Sequence[str] | None, when: datetime | None = None
-) -> datetime:
+def record_lock(when: datetime | None = None) -> datetime:
     when = when or datetime.now(timezone.utc)
-    rec: dict = {"ts": when.isoformat(), "action": "lock"}
-    if authorizers:
-        rec["authorizers"] = list(authorizers)
-    _append(rec)
+    _append({"ts": when.isoformat(), "action": "lock"})
     return when
 
 
-def record_change(
-    authorizers: Sequence[str] | None,
-    change: str,
-    when: datetime | None = None,
-) -> datetime:
+def record_change(change: str, when: datetime | None = None) -> datetime:
     when = when or datetime.now(timezone.utc)
     _append(
-        {
-            "ts": when.isoformat(),
-            "action": "change",
-            "authorizers": list(authorizers) if authorizers else None,
-            "change": change,
-        }
+        {"ts": when.isoformat(), "action": "change", "change": change}
     )
     return when
 
@@ -72,8 +54,8 @@ def record_change(
 def record_export(
     dest_filename: str, when: datetime | None = None
 ) -> datetime:
-    """Record a backup export. No authorizers — export is open to anyone
-    so the audit entry just notes when and where the data was written."""
+    """Record a backup export. Export is open to anyone, so the entry
+    just notes when and where the data was written."""
     when = when or datetime.now(timezone.utc)
     _append(
         {
@@ -86,18 +68,16 @@ def record_export(
 
 
 def record_import(
-    authorizers: Sequence[str],
     source_filename: str,
     when: datetime | None = None,
 ) -> datetime:
-    """Record a backup import. Always carries authorizers since import
-    requires the same 2-CAC unlock as other settings changes."""
+    """Record a backup import. Gated by the same unlock as other settings
+    changes, but the password itself isn't logged."""
     when = when or datetime.now(timezone.utc)
     _append(
         {
             "ts": when.isoformat(),
             "action": "import",
-            "authorizers": list(authorizers),
             "source": source_filename,
         }
     )
