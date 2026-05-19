@@ -8,10 +8,15 @@ Linux/macOS from source.
 The repo ships both the source and a prebuilt `BarScanner.exe` so you can
 double-click it on a Windows machine without installing Python.
 
-## Run the prebuilt binary
+## Download
 
-Copy `BarScanner.exe` to a Windows machine and double-click. No install
-needed; PyInstaller bundles the Python runtime.
+**[⬇ Download BarScanner.exe](https://github.com/NuclearChickens/CAC-Bar-Scanner/raw/main/BarScanner.exe)**
+&nbsp;·&nbsp; ~11 MB &nbsp;·&nbsp; Windows 10/11 &nbsp;·&nbsp; no install
+
+Save the file anywhere on the target PC and double-click to run. The first
+time, Windows may show **"Windows protected your PC"** — click **More
+info** → **Run anyway** (the warning appears because the binary isn't
+code-signed, not because anything is wrong with it).
 
 ## Run from source
 
