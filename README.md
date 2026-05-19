@@ -30,7 +30,20 @@ Keys:
 
 ## Build the `.exe` yourself
 
-Two paths, depending on whether you want fast or faithful.
+Three paths.
+
+### Native: build directly on Windows
+
+On a Windows machine, install Python 3.12 from
+[python.org](https://www.python.org/downloads/) — tick **Add python.exe to
+PATH** in the installer. Open a fresh Command Prompt (so it picks up the
+new PATH), `cd` into a clone of this repo, then run
+`pip install pyinstaller` followed by
+`pyinstaller --onefile --windowed --name BarScanner --clean --noconfirm cac_gui.py`.
+The finished binary lands at `dist\BarScanner.exe` — copy it anywhere and
+double-click. No virtualenv needed; the GUI has no third-party deps, so
+PyInstaller is the only pip install required. Tk ships with the standard
+python.org installer, so there's nothing extra to add for the GUI itself.
 
 ### Fast: Wine in Docker (~1 minute after first pull)
 
