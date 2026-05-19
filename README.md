@@ -30,7 +30,7 @@ Keys:
 
 ## Build the `.exe` yourself
 
-Three paths.
+Two paths.
 
 ### Native: build directly on Windows
 
@@ -55,19 +55,6 @@ Produces `dist/BarScanner.exe`. Uses `batonogov/pyinstaller-windows`; first
 run pulls the image (~2 GB). PyInstaller is **not** a cross-compiler — this
 runs real PyInstaller inside Wine inside Linux.
 
-### Faithful: real Windows in Docker
-
-For verifying a build in a genuine Windows environment. See
-`dockur/compose.yml` for the full procedure. One-time ~30-minute Windows
-install, then builds via RDP in a couple of minutes:
-
-```bash
-cd dockur
-docker compose up -d            # boots Windows, installs Python+PyInstaller
-# wait for READY.txt on the desktop (watch http://localhost:8006)
-./build.sh                      # RDPs in, runs pyinstaller, drops dist/BarScanner.exe
-```
-
 ## Source layout
 
 | File             | Role                                                  |
@@ -80,5 +67,4 @@ docker compose up -d            # boots Windows, installs Python+PyInstaller
 | `reset_log.py`   | Periodic log rollover                                 |
 | `backup.py`      | Settings + log backup/restore                         |
 | `build_exe.sh`   | Wine-in-Docker build script                           |
-| `dockur/`        | Native Windows VM build environment (alternative)     |
 | `BarScanner.spec`| PyInstaller spec (single-file, windowed)              |

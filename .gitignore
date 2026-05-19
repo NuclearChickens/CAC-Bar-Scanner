@@ -7,9 +7,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# dockurr/windows VM disk (gigabytes, not source)
-dockur/windows-storage/
-
 # Runtime data created by the app on first run
 audit.log
 scan_log.json
