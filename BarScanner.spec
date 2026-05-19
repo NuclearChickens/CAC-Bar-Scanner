@@ -5,7 +5,11 @@ a = Analysis(
     ['cac_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    # Ship icon.ico inside the onefile exe so the runtime can find it
+    # via sys._MEIPASS (see _resource_path in cac_gui.py). The same
+    # icon.ico is also embedded as the exe's File Explorer icon via
+    # the EXE(icon=...) line below — separate concern.
+    datas=[('icon.ico', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

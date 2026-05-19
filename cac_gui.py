@@ -21,6 +21,7 @@ ALLOWED/DENIED status is readable from across a room.
 """
 from __future__ import annotations
 
+import os
 import sys
 import tkinter as tk
 from dataclasses import replace
@@ -83,6 +84,34 @@ def _enable_windows_dpi_awareness() -> None:
         pass
 
 
+def _resource_path(rel: str) -> str:
+    """Resolve a path to a bundled resource.
+
+    PyInstaller --onefile extracts ``datas`` files into a per-run temp
+    directory exposed as ``sys._MEIPASS``; in a source-tree run we
+    resolve relative to this module's directory instead."""
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, rel)
+
+
+def _set_window_icon(root: tk.Tk) -> None:
+    """Set the title-bar / taskbar icon for the root window and any
+    Toplevels created from it.
+
+    Windows only — Tk's ``iconbitmap`` on Linux/macOS expects an XBM
+    file and would raise on a .ico. The exe icon (the one shown by
+    File Explorer) is wired up separately via BarScanner.spec, so
+    skipping this on non-Windows just leaves the dev's Tk feather
+    icon in place."""
+    if sys.platform != "win32":
+        return
+    try:
+        root.iconbitmap(default=_resource_path("icon.ico"))
+    except tk.TclError:
+        # Icon missing or unreadable — not worth blocking startup.
+        pass
+
+
 def _parse_expires_input(s: str) -> tuple[str | None, str | None]:
     """Parse a ban-expires field. Accepts 8 digits ``YYYYMMDD`` (preferred)
     and also tolerates ``YYYY-MM-DD``. Returns (iso_string_or_None,
@@ -111,6 +140,7 @@ class App(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("CAC Barcode Scanner")
+        _set_window_icon(self)
 
         # Scaling: must come before fonts/styles/geometry — they all depend
         # on it. Screen dimensions are queryable as soon as Tk is up.
