@@ -18,12 +18,17 @@ the kiosk.
 | **Limits** | Max drinks per person per session.                           |
 | **Roster** | Which DoD categories and branches are allowed to drink.      |
 | **Banned** | Specific DoD IDs that are denied no matter what.             |
-| **Reset**  | Wipe today's drink counts (requires two CACs).               |
+| **Reset**  | Wipe today's drink counts and change the admin password.     |
 | **Logs**   | Read-only history of every admin action.                     |
 | **Backup** | Export or import settings + logs.                            |
 
-All settings tabs are **locked by default**. Two different CAC swipes
-unlock them for 5 minutes. See **[Unlocking settings](#unlocking-settings)**.
+All settings tabs are **locked by default**. Entering the admin
+password unlocks them for 5 minutes. See
+**[Unlocking settings](#unlocking-settings)**.
+
+> 🔑 **First launch:** the default admin password is **`admin`**.
+> Change it the first time you unlock — see
+> [Changing the admin password](#changing-the-admin-password).
 
 ---
 
@@ -68,6 +73,31 @@ will appear the next time *a different* user logs in and tries the
 app. Once anyone clicks **Install**, the offer is dismissed for
 everyone.
 
+### Re-running install from inside the app
+
+If the first-run dialog has already been dismissed (or you can't find
+the Start menu entry afterwards), you can re-trigger the install at
+any time:
+
+1. Open the **Backup** tab.
+2. The **PC install** box at the top shows whether the app is
+   installed for this PC and the exact path the shortcut should land
+   at.
+3. Click **Install for this PC…** (or **Reinstall…** if it's already
+   installed) and approve the UAC prompt. Reinstall is safe — it just
+   refreshes the shortcut, the ACL on the shared data folder, and the
+   Add/Remove Programs entry.
+4. Click **Open Start menu folder** to verify the shortcut landed in
+   `C:\ProgramData\Microsoft\Windows\Start Menu\Programs\`. Windows
+   Search sometimes takes a minute to pick up new entries — if the
+   file is there but typing the name doesn't find it, give the
+   indexer a moment and try again.
+
+If the install fails, the elevated step shows a popup naming exactly
+which sub-step failed (copying the exe, setting the ACL, creating the
+shortcut, or writing the registry). Take a photo or note the message
+when reporting the issue.
+
 ---
 
 ## Launching the app
@@ -107,6 +137,10 @@ their limit by trying again. Invalid scans aren't recorded at all.
 - **Session line at the bottom** — current operating window (e.g.
   *"Open 17:00 → 02:00"*) so you can confirm the right rules are
   in effect at a glance.
+- **Drinks served (bottom-left)** — running tally of every allowed
+  scan in the current window. Denied and invalid scans don't count,
+  so this matches what was actually served. Resets when the session
+  rolls over or when an admin does a manual reset.
 - **Clear button** — blanks the last decoded result. Handy between
   customers if you want a clean screen.
 
@@ -176,18 +210,34 @@ automatically on their expiry date — no manual cleanup needed.
 
 ---
 
-## Reset tab — wipe today's counts
+## Reset tab — wipe today's counts and change the password
 
 For shift changes or a manual "start the night over."
 
-1. Click **Reset drinks for the day**.
-2. The first authorizer scans their CAC.
-3. The second authorizer (must be different) scans theirs.
-4. All drink counts are wiped immediately.
+1. **Unlock the tab** with the admin password if it's still locked
+   (see [Unlocking settings](#unlocking-settings)).
+2. Click **Reset drinks for the day**.
+3. Confirm in the popup. All drink counts are wiped immediately.
 
 Every reset is recorded in the **Public reset log** below — that log
-is permanent and lists both authorizers with the date and time. The
-log can't be edited or deleted. This is your accountability trail.
+is permanent and lists each reset with its date and time. The log
+can't be edited or deleted. This is your accountability trail.
+
+### Changing the admin password
+
+Below the reset button is a **Change admin password** box. While the
+tab is unlocked:
+
+1. Type a new password in **New password**.
+2. Re-type it in **Confirm**.
+3. Click **Change password**.
+
+Passwords must be at least 4 characters. The change takes effect
+immediately — anyone who already unlocked stays unlocked until the
+5-minute timer expires, but the next unlock will require the new
+password. Each password change is recorded in the **Logs** tab as a
+generic *"admin password changed"* entry (the password itself is
+never written to disk in clear text).
 
 ---
 
@@ -214,11 +264,16 @@ The Backup tab does two things:
 | Action                  | Requires unlock? | Notes                                               |
 | ----------------------- | ---------------- | --------------------------------------------------- |
 | **Export full backup**  | No               | Saves a `.zip` of every setting + log.              |
-| **Import full backup**  | Yes (2 CACs)     | Overwrites all settings and logs on this machine.   |
+| **Import full backup**  | Yes (password)   | Overwrites all settings and logs on this machine.   |
 
 > ⚠️ **Import is destructive.** It **replaces** the current settings
 > and logs with the backup. There's a confirmation dialog before
 > anything is overwritten, but there's no undo afterward.
+
+> 💡 **Heads-up:** the import also replaces the saved admin password
+> with the one stored in the backup. If you import a backup made on
+> another machine, the password on this PC becomes that machine's
+> password (or `admin` if it never had one set).
 
 ---
 
@@ -231,23 +286,43 @@ that changes configuration sits behind a lock:
 - Limits
 - Roster
 - Banned
+- Reset (drinks + change password)
 - Backup → Import
 
-Each locked tab shows a pink banner reading **LOCKED — scan 2 CACs
-to enable editing.**
+Each locked tab shows a pink banner reading **LOCKED — enter the
+admin password to enable editing.**
 
 ### How to unlock
 
 1. Click **Unlock** on the banner.
-2. A small popup appears. The first authorizer scans their CAC.
-3. The second authorizer (must be different) scans theirs.
-4. The banner turns green and shows both IDs.
-5. You have **5 minutes** to make changes before the app auto-locks.
-6. Click **Lock** on the banner to lock immediately.
+2. A small popup appears. Type the **admin password** and press
+   **Enter** (or click **Unlock**).
+3. The banner turns green.
+4. You have **5 minutes** to make changes before the app auto-locks.
+5. Click **Lock** on the banner to lock immediately.
 
 Every change you make while unlocked is recorded in the
-[Logs tab](#logs-tab--what-happened-and-when) against both
-authorizing IDs.
+[Logs tab](#logs-tab--what-happened-and-when).
+
+> 🔑 **The default password is `admin`.** Change it the first time
+> you unlock — see
+> [Changing the admin password](#changing-the-admin-password).
+> If you forget it, see
+> [Recovering a lost password](#recovering-a-lost-password) below.
+
+### Recovering a lost password
+
+The password hash lives in `settings.json` inside the shared data
+folder (see [Where the app stores its data](#where-the-app-stores-its-data)).
+With local admin rights on the PC you can edit it:
+
+1. Close BarScanner.
+2. Open `C:\ProgramData\CACBarScanner\settings.json` in Notepad
+   (run Notepad **as administrator** if you can't save).
+3. Delete the line that starts with `"admin_password_hash":` (or
+   set the value to `""`).
+4. Save and relaunch BarScanner — the default password (`admin`)
+   is accepted again. Change it right away.
 
 ---
 
@@ -271,10 +346,10 @@ which is what makes the configuration shared.
 
 | File             | What's in it                                              |
 | ---------------- | --------------------------------------------------------- |
-| `settings.json`  | Hours, limits, roster, ban list — your configuration.     |
+| `settings.json`  | Hours, limits, roster, ban list, password hash.           |
 | `scans.jsonl`    | Running drink counts (one record per scan).               |
 | `audit.jsonl`    | Every admin action — unlocks, changes, resets, exports.   |
-| `resets.jsonl`   | Every manual drink reset, with both authorizing IDs.      |
+| `resets.jsonl`   | Every manual drink reset, with date and time.             |
 
 You don't normally need to touch any of these — the app reads and
 writes them automatically. The **Backup** tab is the supported way

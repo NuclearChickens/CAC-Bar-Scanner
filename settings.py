@@ -16,8 +16,13 @@ fields are added.
 """
 from __future__ import annotations
 
+import base64
+import dataclasses
+import hashlib
+import hmac
 import json
 import os
+import secrets
 import sys
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, time, timedelta
@@ -40,6 +45,49 @@ SETTINGS_FILE = SETTINGS_DIR / "settings.json"
 DEFAULT_OPEN = "00:00"
 DEFAULT_CLOSE = "00:00"  # open == close => 24-hour rolling window
 DEFAULT_MAX_DRINKS = 3
+
+# Admin password — gates every settings tab, the manual reset, and the
+# backup import. Stored as a PBKDF2-SHA256 hash with a per-record salt
+# in settings.json; an empty hash means "no password set, accept the
+# default" so a fresh install is usable without an extra setup dance.
+DEFAULT_ADMIN_PASSWORD = "admin"
+PBKDF2_ITERATIONS = 200_000
+MIN_PASSWORD_LEN = 4
+
+
+def hash_password(plain: str) -> str:
+    """Hash ``plain`` with PBKDF2-HMAC-SHA256 + 16-byte random salt and
+    return a self-describing string of the form
+    ``pbkdf2_sha256$<iterations>$<salt_b64>$<hash_b64>``. The iteration
+    count and salt travel with the hash so verification doesn't depend
+    on the constants used at hash time."""
+    salt = secrets.token_bytes(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", plain.encode("utf-8"), salt, PBKDF2_ITERATIONS
+    )
+    return (
+        f"pbkdf2_sha256${PBKDF2_ITERATIONS}$"
+        f"{base64.urlsafe_b64encode(salt).decode('ascii')}$"
+        f"{base64.urlsafe_b64encode(digest).decode('ascii')}"
+    )
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """Constant-time verify ``plain`` against a previously-stored hash.
+    Returns False for malformed hashes rather than raising."""
+    try:
+        algo, iters_str, salt_b64, digest_b64 = hashed.split("$")
+        if algo != "pbkdf2_sha256":
+            return False
+        iters = int(iters_str)
+        salt = base64.urlsafe_b64decode(salt_b64.encode("ascii"))
+        digest = base64.urlsafe_b64decode(digest_b64.encode("ascii"))
+    except (ValueError, TypeError):
+        return False
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256", plain.encode("utf-8"), salt, iters
+    )
+    return hmac.compare_digest(candidate, digest)
 
 TRACKING_HOURS = "hours"      # operating-hours session window
 TRACKING_ROLLING = "rolling"  # last-N-hours sliding window
@@ -121,6 +169,22 @@ class Settings:
     bans: Tuple[Ban, ...] = ()
     tracking_mode: str = DEFAULT_TRACKING_MODE
     rolling_hours: int = DEFAULT_ROLLING_HOURS
+    admin_password_hash: str = ""  # empty => accept DEFAULT_ADMIN_PASSWORD
+
+    # ----------------------------------------------------- admin password
+
+    def verify_admin_password(self, plain: str) -> bool:
+        """True iff ``plain`` matches the stored admin password. With no
+        password set (fresh install), the constant default is accepted
+        so the app is usable out of the box."""
+        if not self.admin_password_hash:
+            return plain == DEFAULT_ADMIN_PASSWORD
+        return verify_password(plain, self.admin_password_hash)
+
+    def with_admin_password(self, new_plain: str) -> "Settings":
+        return dataclasses.replace(
+            self, admin_password_hash=hash_password(new_plain)
+        )
 
     # ------------------------------------------------------------ hours
 
@@ -309,6 +373,9 @@ def from_dict(data: dict) -> Settings:
         bans=bans,
         tracking_mode=tracking_mode,
         rolling_hours=rolling_hours,
+        admin_password_hash=str(
+            data.get("admin_password_hash", defaults.admin_password_hash)
+        ),
     )
     s.open_t  # noqa: B018  — validate HH:MM
     s.close_t  # noqa: B018

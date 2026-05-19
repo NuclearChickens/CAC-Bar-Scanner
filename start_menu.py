@@ -83,6 +83,17 @@ class InstallResult(Enum):
     UNSUPPORTED = "unsupported"  # not running on Windows
 
 
+class InstallFailure(Exception):
+    """Wraps an install step that failed so the elevated child can
+    report exactly where things broke. ``step`` is the human-readable
+    step name; ``cause`` is the underlying exception."""
+
+    def __init__(self, step: str, cause: BaseException) -> None:
+        super().__init__(f"{step}: {cause}")
+        self.step = step
+        self.cause = cause
+
+
 # ---------------------------------------------------------------- paths
 
 def all_users_start_menu() -> Path:
@@ -243,18 +254,42 @@ def _do_machine_install() -> None:
         3. Drop the all-users Start menu shortcut.
         4. Write the HKLM uninstall registry entry — DisplayName,
            DisplayVersion, Publisher, EstimatedSize, InstallDate,
-           DisplayIcon, UninstallString, etc."""
-    installed_exe = _install_exe_to_program_files()
+           DisplayIcon, UninstallString, etc.
 
-    data_dir = settings_mod.SETTINGS_DIR
-    data_dir.mkdir(parents=True, exist_ok=True)
-    _grant_authenticated_users_modify(data_dir)
+    Each step is wrapped so any failure carries the step name out via
+    ``InstallFailure`` — the elevated child uses that to surface a
+    meaningful error to the user before exiting non-zero."""
+    try:
+        installed_exe = _install_exe_to_program_files()
+    except Exception as e:
+        raise InstallFailure("Copy BarScanner.exe to Program Files", e) from e
 
-    _create_shortcut(
-        str(installed_exe),
-        all_users_start_menu() / SHORTCUT_FILENAME,
-    )
-    _register_uninstall_entry(installed_exe)
+    try:
+        data_dir = settings_mod.SETTINGS_DIR
+        data_dir.mkdir(parents=True, exist_ok=True)
+        _grant_authenticated_users_modify(data_dir)
+    except Exception as e:
+        raise InstallFailure("Provision shared data folder", e) from e
+
+    shortcut_path = all_users_start_menu() / SHORTCUT_FILENAME
+    try:
+        _create_shortcut(str(installed_exe), shortcut_path)
+    except Exception as e:
+        raise InstallFailure("Create Start menu shortcut", e) from e
+    # PowerShell can exit 0 without actually writing the .lnk (rare, but
+    # we've seen it happen on locked-down kiosk PCs). Verify the file
+    # really landed before declaring success — otherwise the user sees
+    # "installed" but the Start menu has nothing.
+    if not shortcut_path.exists():
+        raise InstallFailure(
+            "Create Start menu shortcut",
+            RuntimeError(f"shortcut not found at {shortcut_path} after PowerShell call"),
+        )
+
+    try:
+        _register_uninstall_entry(installed_exe)
+    except Exception as e:
+        raise InstallFailure("Register in Add/Remove Programs", e) from e
 
 
 def _install_exe_to_program_files() -> Path:
@@ -504,6 +539,11 @@ def handle_elevated_install_cli() -> bool:
     """If we were spawned with ``--install-for-machine``, run the
     privileged install and ``sys.exit`` (0 on success, 1 on failure).
 
+    On failure, pop up a Tk error dialog naming the step that failed
+    BEFORE exiting non-zero. The non-elevated parent only sees an
+    exit code; the elevated child is the only place we can surface a
+    real error message to the user.
+
     Returns False if the flag isn't present so callers can do
     ``if handle_elevated_install_cli(): return`` at the top of main()
     and otherwise proceed to bring up the GUI."""
@@ -512,8 +552,36 @@ def handle_elevated_install_cli() -> bool:
     try:
         _do_machine_install()
         sys.exit(0)
-    except Exception:
+    except InstallFailure as e:
+        _show_install_error_dialog(
+            f"The install failed at: {e.step}\n\n"
+            f"Underlying error:\n{e.cause}\n\n"
+            "Try right-clicking BarScanner.exe and choosing "
+            '"Run as administrator", then click Install again.'
+        )
         sys.exit(1)
+    except Exception as e:
+        _show_install_error_dialog(
+            f"The install failed with an unexpected error:\n\n{e}"
+        )
+        sys.exit(1)
+
+
+def _show_install_error_dialog(msg: str) -> None:
+    """Show a modal Tk error popup. Used by the elevated child so it
+    can surface a real failure reason instead of just exiting with a
+    non-zero code that the parent can't decode."""
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Install failed", msg)
+        root.destroy()
+    except Exception:
+        # Tk itself might not be available in some elevated contexts;
+        # falling back silently is better than crashing the dialog code.
+        pass
 
 
 def handle_uninstall_cli() -> bool:

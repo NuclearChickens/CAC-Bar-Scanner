@@ -67,6 +67,18 @@ def count_since(
     return sum(1 for e, ts in _iter_records() if e == edipi and since <= ts <= now)
 
 
+def count_total_since(
+    since: datetime,
+    now: datetime | None = None,
+) -> int:
+    """Count every scan across all EDIPIs between ``since`` and ``now``.
+
+    Used for the bar-wide drinks-served counter. Mirrors ``count_since``
+    but without the per-EDIPI filter."""
+    now = now or datetime.now(timezone.utc)
+    return sum(1 for _e, ts in _iter_records() if since <= ts <= now)
+
+
 def prune_before(cutoff: datetime) -> int:
     """Drop records with ts < cutoff. Returns the number removed.
 

@@ -23,7 +23,6 @@ import tempfile
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Sequence
 
 import settings as settings_mod
 from settings import SETTINGS_DIR, Settings
@@ -91,7 +90,7 @@ def export_backup(dest: Path) -> None:
 # ---------------------------------------------------------------- import
 
 
-def import_backup(src: Path, authorizers: Sequence[str]) -> Settings:
+def import_backup(src: Path) -> Settings:
     """Replace local files from a backup zip. Returns the new Settings
     so the caller can refresh in-memory state.
 
@@ -157,7 +156,6 @@ def import_backup(src: Path, authorizers: Sequence[str]) -> Settings:
         import_record = {
             "ts": datetime.now(timezone.utc).isoformat(),
             "action": "import",
-            "authorizers": list(authorizers),
             "source": src.name,
         }
         with audit_src.open("a", encoding="utf-8") as f:
