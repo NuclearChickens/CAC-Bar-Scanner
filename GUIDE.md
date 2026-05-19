@@ -212,9 +212,6 @@ The Backup tab does two things:
 | **Export full backup**  | No               | Saves a `.zip` of every setting + log.              |
 | **Import full backup**  | Yes (2 CACs)     | Overwrites all settings and logs on this machine.   |
 
-> ⚠️ **Heads up:** Exported backups contain DoD IDs and the ban list.
-> Treat the `.zip` like an HR document — keep it somewhere safe.
-
 > ⚠️ **Import is destructive.** It **replaces** the current settings
 > and logs with the backup. There's a confirmation dialog before
 > anything is overwritten, but there's no undo afterward.
