@@ -17,6 +17,7 @@ on first read, then updates in step with every ``record_scan`` /
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 from settings import SETTINGS_DIR as LOG_DIR
@@ -51,12 +52,21 @@ def _ensure_loaded() -> None:
 
 
 def record_scan(edipi: str, when: datetime | None = None) -> datetime:
-    """Append a scan event to the log. Returns the timestamp recorded."""
+    """Append a scan event to the log. Returns the timestamp recorded.
+
+    Durable by fsync: the returned timestamp implies the row is on disk,
+    so a power loss cannot leave a served drink invisible in the log
+    while the operator saw an ALLOWED banner."""
     when = when or datetime.now(timezone.utc)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
+    # Load the existing on-disk state BEFORE appending, otherwise the
+    # lazy load would re-read the row we just wrote and then this
+    # function would append a duplicate copy in-memory.
+    _ensure_loaded()
     with LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"edipi": edipi, "ts": when.isoformat()}) + "\n")
-    _ensure_loaded()
+        f.flush()
+        os.fsync(f.fileno())
     _records.append((edipi, when))
     return when
 
