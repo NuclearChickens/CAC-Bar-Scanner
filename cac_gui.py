@@ -202,6 +202,10 @@ class App(tk.Tk):
         self.bind_all("<Control-q>", lambda _e: self._on_close())
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.bind("<Configure>", self._on_root_resize)
+        # Kiosk focus recovery: any click on the Scanner tab that lands on
+        # something other than the Entry punts focus back so an HID
+        # scanner's keystrokes never fall into the void.
+        self.bind_all("<Button-1>", self._maybe_recover_scanner_focus, add="+")
 
         self._start_maximized()
 
@@ -1866,6 +1870,21 @@ class App(tk.Tk):
             self.entry.focus_set()
         elif current == "Logs":
             self._refresh_logs()
+
+    def _maybe_recover_scanner_focus(self, event: tk.Event) -> None:
+        # Only intervene when the Scanner tab is up; the Settings tab must
+        # keep normal click-to-focus behaviour for its own inputs.
+        try:
+            current = self.notebook.tab(self.notebook.select(), "text")
+        except tk.TclError:
+            return
+        if current != "Scanner":
+            return
+        if event.widget is self.entry:
+            return
+        # Defer so the clicked widget's own bindings run first (buttons,
+        # tab-change, etc.) — otherwise focus_set could race their handlers.
+        self.after_idle(self.entry.focus_set)
 
     def _on_input_changed(self, *_: object) -> None:
         if self._processing:
