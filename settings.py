@@ -171,6 +171,24 @@ class Settings:
     rolling_hours: int = DEFAULT_ROLLING_HOURS
     admin_password_hash: str = ""  # empty => accept DEFAULT_ADMIN_PASSWORD
 
+    def __post_init__(self) -> None:
+        # Group bans by EDIPI so ``active_ban_for`` is O(1) at scan time.
+        # ``dataclasses.asdict`` ignores non-field attributes, so this
+        # cache doesn't leak into settings.json.
+        grouped: dict[str, list[Ban]] = {}
+        for b in self.bans:
+            grouped.setdefault(b.edipi, []).append(b)
+        object.__setattr__(self, "_bans_by_edipi", grouped)
+
+    def active_ban_for(
+        self, edipi: str, today: date | None = None
+    ) -> Ban | None:
+        """Return the currently-active Ban for ``edipi`` or None. Expired
+        entries are skipped even if they are the only ones recorded."""
+        today = today or date.today()
+        bans_for_edipi: list[Ban] = self._bans_by_edipi.get(edipi, [])
+        return next((b for b in bans_for_edipi if b.is_active(today)), None)
+
     # ----------------------------------------------------- admin password
 
     def verify_admin_password(self, plain: str) -> bool:
@@ -280,10 +298,7 @@ def check_eligibility(
     ``current_count`` is the count BEFORE this scan. Expired bans are
     skipped — a ban with a date in the past no longer denies."""
     today = today or date.today()
-    active_ban = next(
-        (b for b in settings.bans if b.edipi == edipi and b.is_active(today)),
-        None,
-    )
+    active_ban = settings.active_ban_for(edipi, today)
     if active_ban is not None:
         if active_ban.expires:
             return EligibilityResult(

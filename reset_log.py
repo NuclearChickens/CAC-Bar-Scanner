@@ -13,6 +13,11 @@ Legacy entries written before password auth replaced two-CAC integrity
 also carry ``edipi1`` / ``edipi2`` fields; the reader returns them as
 optional tuple elements so historical records can still be displayed
 with the two authorizing EDIPIs.
+
+``latest_reset()`` sits on the per-scan hot path (via
+``_effective_since``) so its result is cached in memory and only
+invalidated when ``record_reset`` writes a new entry. The full-file
+iterator is only walked by the Logs tab.
 """
 from __future__ import annotations
 
@@ -25,12 +30,33 @@ from settings import SETTINGS_DIR as LOG_DIR
 LOG_FILE = LOG_DIR / "resets.jsonl"
 
 
+_latest_cached: datetime | None = None
+_latest_loaded: bool = False
+
+
+def _ensure_latest_loaded() -> None:
+    """Populate ``_latest_cached`` from disk once. Idempotent."""
+    global _latest_cached, _latest_loaded
+    if _latest_loaded:
+        return
+    latest: datetime | None = None
+    for ts, _e1, _e2 in _iter_records():
+        if latest is None or ts > latest:
+            latest = ts
+    _latest_cached = latest
+    _latest_loaded = True
+
+
 def record_reset(when: datetime | None = None) -> datetime:
     """Append a reset event. Returns the timestamp recorded (UTC-aware)."""
+    global _latest_cached, _latest_loaded
     when = when or datetime.now(timezone.utc)
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     with LOG_FILE.open("a", encoding="utf-8") as f:
         f.write(json.dumps({"ts": when.isoformat()}) + "\n")
+    _ensure_latest_loaded()
+    if _latest_cached is None or when > _latest_cached:
+        _latest_cached = when
     return when
 
 
@@ -54,11 +80,8 @@ def _iter_records() -> Iterable[tuple[datetime, str | None, str | None]]:
 
 def latest_reset() -> datetime | None:
     """Return the most recent reset timestamp, or None if there are none."""
-    latest: datetime | None = None
-    for ts, _e1, _e2 in _iter_records():
-        if latest is None or ts > latest:
-            latest = ts
-    return latest
+    _ensure_latest_loaded()
+    return _latest_cached
 
 
 def list_resets() -> list[tuple[datetime, str | None, str | None]]:
