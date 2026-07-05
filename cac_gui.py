@@ -54,8 +54,10 @@ UNLOCKED_BG = "#e6f4ea"   # very light green for the unlocked banner
 # kiosks alike. Tuple format: (point_size, weight, family); empty weight
 # means normal weight.
 _BASE_FONTS: dict[str, tuple[int, str, str]] = {
-    "BANNER_HEAD":   (84, "bold", "TkDefaultFont"),
-    "BANNER_DETAIL": (40, "",     "TkDefaultFont"),
+    "BANNER_HEAD":   (84,  "bold", "TkDefaultFont"),
+    "BANNER_COUNT":  (200, "bold", "TkDefaultFont"),  # giant current count
+    "BANNER_MAX":    (56,  "bold", "TkDefaultFont"),  # small "/ MAX" denominator
+    "BANNER_DETAIL": (40,  "",     "TkDefaultFont"),
     "ENTRY":         (44, "",     "TkFixedFont"),
     "VALUE_BIG":     (40, "bold", "TkFixedFont"),  # EDIPI — critical, fixed
     "VALUE":         (22, "",     "TkDefaultFont"),  # Category/Branch — reference
@@ -460,8 +462,10 @@ class App(tk.Tk):
         )
         self.banner.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(18)))
         self.banner.columnconfigure(0, weight=1)
-        self.banner.rowconfigure(0, weight=3)
-        self.banner.rowconfigure(1, weight=2)
+        # Verdict headline (row 0), giant count (row 1, dominant), detail (row 2).
+        self.banner.rowconfigure(0, weight=2)
+        self.banner.rowconfigure(1, weight=6)
+        self.banner.rowconfigure(2, weight=2)
         self.banner_lbl = tk.Label(
             self.banner,
             text="Ready to scan",
@@ -476,6 +480,30 @@ class App(tk.Tk):
             padx=self._px(20),
             pady=(self._px(16), 0),
         )
+        # Count sub-frame: giant current number over a small "/ MAX" beneath.
+        # Sub-grid so the two labels vertically stack tightly regardless of
+        # how much slack row 1 has to distribute.
+        self.banner_count_frame = tk.Frame(self.banner, bg=WHITE)
+        self.banner_count_frame.grid(row=1, column=0, sticky="nsew")
+        self.banner_count_frame.columnconfigure(0, weight=1)
+        self.banner_count_frame.rowconfigure(0, weight=1)
+        self.banner_count_frame.rowconfigure(1, weight=0)
+        self.banner_count_num = tk.Label(
+            self.banner_count_frame,
+            text="",
+            bg=WHITE,
+            fg=WHITE,
+            font=self.F_BANNER_COUNT,
+        )
+        self.banner_count_num.grid(row=0, column=0, sticky="s")
+        self.banner_count_max = tk.Label(
+            self.banner_count_frame,
+            text="",
+            bg=WHITE,
+            fg=WHITE,
+            font=self.F_BANNER_MAX,
+        )
+        self.banner_count_max.grid(row=1, column=0, sticky="n")
         self.banner_detail = tk.Label(
             self.banner,
             text="",
@@ -486,7 +514,7 @@ class App(tk.Tk):
             justify="center",
         )
         self.banner_detail.grid(
-            row=1,
+            row=2,
             column=0,
             sticky="n",
             padx=self._px(20),
@@ -1975,6 +2003,8 @@ class App(tk.Tk):
                     GREEN,
                     f"ALLOWED — {settings_mod.ordinal(shown_count)} drink",
                     f"{decoded.category} • {decoded.branch}",
+                    count=shown_count,
+                    max_count=self.settings.max_drinks,
                 )
                 # Bar-wide tally bumps on every allowed scan; deferred to
                 # after record_scan so the new row is included.
@@ -1985,7 +2015,13 @@ class App(tk.Tk):
                 self._values["count"].set(
                     f"{current_count} / {self.settings.max_drinks}"
                 )
-                self._set_banner(RED, "DENIED", verdict.reason)
+                self._set_banner(
+                    RED,
+                    "DENIED",
+                    verdict.reason,
+                    count=current_count,
+                    max_count=self.settings.max_drinks,
+                )
         finally:
             self._processing = False
             self.entry.focus_set()
@@ -1996,15 +2032,37 @@ class App(tk.Tk):
         self._last_decoded_edipi = None
         self._set_banner(RED, "INVALID SCAN", f"{raw!r}: {msg}")
 
-    def _set_banner(self, color: str, headline: str, detail: str) -> None:
+    def _set_banner(
+        self,
+        color: str,
+        headline: str,
+        detail: str,
+        count: int | None = None,
+        max_count: int | None = None,
+    ) -> None:
         self.banner.configure(bg=color)
         self.banner_lbl.configure(bg=color, fg=WHITE, text=headline)
         self.banner_detail.configure(bg=color, fg=WHITE, text=detail)
+        if count is not None and max_count is not None:
+            self.banner_count_frame.configure(bg=color)
+            self.banner_count_num.configure(
+                bg=color, fg=WHITE, text=str(count)
+            )
+            self.banner_count_max.configure(
+                bg=color, fg=WHITE, text=f"/ {max_count}"
+            )
+            self.banner_count_frame.grid()
+            self.banner.rowconfigure(1, weight=6)
+        else:
+            self.banner_count_frame.grid_remove()
+            self.banner.rowconfigure(1, weight=0)
 
     def _reset_banner(self) -> None:
         self.banner.configure(bg=WHITE)
         self.banner_lbl.configure(bg=WHITE, fg=BLACK, text="Ready to scan")
         self.banner_detail.configure(bg=WHITE, fg=BLACK, text="")
+        self.banner_count_frame.grid_remove()
+        self.banner.rowconfigure(1, weight=0)
 
     def _refresh_session_label(self) -> None:
         now = datetime.now().astimezone()
