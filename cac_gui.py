@@ -24,8 +24,6 @@ from __future__ import annotations
 import os
 import sys
 import tkinter as tk
-from collections import deque
-from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -153,19 +151,9 @@ def _parse_expires_input(s: str) -> tuple[str | None, str | None]:
 # ================================================================== App
 
 
-@dataclass(frozen=True)
-class _PrevScan:
-    ts: datetime
-    color: str            # GREEN or RED — same constants the live banner uses
-    headline: str         # e.g. "ALLOWED — 2nd drink", "DENIED", "INVALID SCAN"
-    detail: str           # e.g. "Cdr — Army", denial reason, or raw + reason
-    edipi: str | None     # None for INVALID; omitted from the strip when None
-
-
 class App(tk.Tk):
     PLACEHOLDER = "—"
     REFRESH_MS = 60_000
-    PREV_STRIP_TICK_MS = 5_000     # cadence for refreshing "Xs ago" on prev strip
     AUTO_LOCK_MS = 5 * 60 * 1000   # auto-lock settings 5 min after unlock
 
     def __init__(self) -> None:
@@ -183,14 +171,7 @@ class App(tk.Tk):
         self.minsize(self._px(900), self._px(700))
 
         self.settings = settings_mod.load()
-        # Scans queue serially through _drain_next; concurrent scanner bursts
-        # arriving during a scan are buffered here rather than dropped.
-        self._scan_queue: deque[str] = deque(maxlen=8)
-        self._draining: bool = False
-        # _prev_scan mirrors the scan currently on the live banner; on the next
-        # scan it is promoted onto the previous-scan strip as _strip_scan.
-        self._prev_scan: _PrevScan | None = None
-        self._strip_scan: _PrevScan | None = None
+        self._processing = False
         self._building = True   # suppress trace_add commits during construction
         self._committing = False
         self._last_decoded_edipi: str | None = None
@@ -211,7 +192,6 @@ class App(tk.Tk):
         self._prune_log()
         self.entry.focus_set()
         self.after(self.REFRESH_MS, self._tick)
-        self.after(self.PREV_STRIP_TICK_MS, self._prev_strip_tick)
         # Offer to add ourselves to the Start menu once, on the first
         # launch of a frozen Windows build. Deferred so the main window
         # is fully drawn before the prompt appears on top of it.
@@ -476,13 +456,8 @@ class App(tk.Tk):
         )
         self.banner.grid(row=0, column=0, sticky="nsew", pady=(0, self._px(18)))
         self.banner.columnconfigure(0, weight=1)
-        # Three internal rows: headline (9), detail (6), previous-scan (5).
-        # Total 20 → previous-scan area gets 5/20 = 1/4 of the banner height.
-        # Ratio inside the live-verdict area (rows 0+1 = 15) still keeps the
-        # original 3:2 headline:detail proportion.
-        self.banner.rowconfigure(0, weight=9)
-        self.banner.rowconfigure(1, weight=6)
-        self.banner.rowconfigure(2, weight=5)
+        self.banner.rowconfigure(0, weight=3)
+        self.banner.rowconfigure(1, weight=2)
         self.banner_lbl = tk.Label(
             self.banner,
             text="Ready to scan",
@@ -513,27 +488,6 @@ class App(tk.Tk):
             padx=self._px(20),
             pady=(self._px(8), self._px(18)),
         )
-
-        # Previous-scan area — bottom 1/4 of the banner. When a new scan
-        # clobbers the live verdict above, the prior scan's verdict stays
-        # visible here with a live "Xs ago" label. Painted with the prior
-        # scan's color (independent of the live verdict's color above), so
-        # if "now" is ALLOWED green and "before" was DENIED, the banner is
-        # half green / quarter red. Hidden until the second scan happens.
-        self._prev_strip_var = tk.StringVar(value="")
-        self._prev_strip_lbl = tk.Label(
-            self.banner,
-            textvariable=self._prev_strip_var,
-            bg=WHITE,
-            fg=WHITE,
-            font=self.F_BANNER_DETAIL,
-            wraplength=self._px(1400),
-            justify="center",
-            padx=self._px(20),
-            pady=self._px(8),
-        )
-        self._prev_strip_lbl.grid(row=2, column=0, sticky="nsew")
-        self._prev_strip_lbl.grid_remove()  # hidden until the second scan
 
         ttk.Label(
             tab,
@@ -1914,50 +1868,23 @@ class App(tk.Tk):
             self._refresh_logs()
 
     def _on_input_changed(self, *_: object) -> None:
+        if self._processing:
+            return
         text = self.input_var.get().strip().upper()
         if len(text) >= BARCODE_LEN:
-            # Clear immediately so a concurrent burst from a second scanner
-            # starts a fresh buffer instead of appending to this scan's tail.
-            # Recursive trigger of this same handler on the cleared value is
-            # a no-op (len < BARCODE_LEN).
-            self.input_var.set("")
-            self._enqueue_scan(text[-BARCODE_LEN:])
+            self._process(text[-BARCODE_LEN:])
 
     def _on_enter(self, _event: tk.Event) -> str:
-        text = self.input_var.get().strip().upper()
-        if text:
-            self.input_var.set("")
-            self._enqueue_scan(text)
+        if not self._processing:
+            text = self.input_var.get().strip().upper()
+            if text:
+                self._process(text)
         return "break"
-
-    def _enqueue_scan(self, raw: str) -> None:
-        self._scan_queue.append(raw)
-        if not self._draining:
-            self._draining = True
-            self.after(0, self._drain_next)
-
-    def _drain_next(self) -> None:
-        if not self._scan_queue:
-            self._draining = False
-            return
-        raw = self._scan_queue.popleft()
-        try:
-            self._process(raw)
-        finally:
-            # Yield to Tk's event loop between scans so the banner/strip
-            # repaint and the user can perceive each verdict.
-            self.after(10, self._drain_next)
 
     def _tick(self) -> None:
         self._refresh_session_label()
         self._prune_log()
         self.after(self.REFRESH_MS, self._tick)
-
-    def _prev_strip_tick(self) -> None:
-        # Re-render only the "Xs ago" portion of the previous-scan strip.
-        # The rest of the label content is static once the scan happens.
-        self._refresh_prev_strip_time_only()
-        self.after(self.PREV_STRIP_TICK_MS, self._prev_strip_tick)
 
     def _prune_log(self) -> None:
         """Trim the scan log to the minimum retention window: anything older
@@ -1979,14 +1906,9 @@ class App(tk.Tk):
     # --------------------------------------------------------- pipeline
 
     def _process(self, raw: str) -> None:
-        # Promote whatever the live banner is currently showing onto the
-        # previous-scan strip before this new scan overwrites the banner.
-        # Without this, a fast back-to-back scan would replace the banner
-        # before the bartender could read the prior verdict.
-        if self._prev_scan is not None:
-            self._strip_scan = self._prev_scan
-            self._render_prev_strip()
+        self._processing = True
         try:
+            self.input_var.set("")
             try:
                 decoded = decode(raw)
             except InvalidBarcode as e:
@@ -2030,41 +1952,28 @@ class App(tk.Tk):
                 prune_before(effective_since)  # type: ignore[arg-type]
                 shown_count = verdict.new_count
                 self._values["count"].set(f"{shown_count} / {self.settings.max_drinks}")
-                headline = f"ALLOWED — {settings_mod.ordinal(shown_count)} drink"
-                detail = f"{decoded.category} • {decoded.branch}"
-                self._set_banner(GREEN, headline, detail)
+                self._set_banner(
+                    GREEN,
+                    f"ALLOWED — {settings_mod.ordinal(shown_count)} drink",
+                    f"{decoded.category} • {decoded.branch}",
+                )
                 # Bar-wide tally bumps on every allowed scan; deferred to
                 # after record_scan so the new row is included.
                 self._refresh_drinks_counter(now=now, window=window)
-                self._prev_scan = _PrevScan(
-                    ts=now, color=GREEN, headline=headline,
-                    detail=detail, edipi=decoded.edipi,
-                )
             else:
                 self._values["count"].set(
                     f"{current_count} / {self.settings.max_drinks}"
                 )
                 self._set_banner(RED, "DENIED", verdict.reason)
-                self._prev_scan = _PrevScan(
-                    ts=now, color=RED, headline="DENIED",
-                    detail=verdict.reason, edipi=decoded.edipi,
-                )
         finally:
+            self._processing = False
             self.entry.focus_set()
 
     def _show_invalid(self, msg: str, raw: str) -> None:
         for var in self._values.values():
             var.set(self.PLACEHOLDER)
         self._last_decoded_edipi = None
-        detail = f"{raw!r}: {msg}"
-        self._set_banner(RED, "INVALID SCAN", detail)
-        self._prev_scan = _PrevScan(
-            ts=datetime.now().astimezone(),
-            color=RED,
-            headline="INVALID SCAN",
-            detail=detail,
-            edipi=None,
-        )
+        self._set_banner(RED, "INVALID SCAN", f"{raw!r}: {msg}")
 
     def _set_banner(self, color: str, headline: str, detail: str) -> None:
         self.banner.configure(bg=color)
@@ -2075,49 +1984,6 @@ class App(tk.Tk):
         self.banner.configure(bg=WHITE)
         self.banner_lbl.configure(bg=WHITE, fg=BLACK, text="Ready to scan")
         self.banner_detail.configure(bg=WHITE, fg=BLACK, text="")
-
-    # ---- previous-scan strip ---------------------------------------
-
-    def _render_prev_strip(self) -> None:
-        """Update the prev-scan area inside the banner to show
-        ``self._strip_scan`` and ensure it's gridded. Called whenever a
-        new scan promotes the prior one onto the strip."""
-        prev = self._strip_scan
-        if prev is None:
-            self._prev_strip_lbl.grid_remove()
-            return
-        self._prev_strip_lbl.configure(bg=prev.color)
-        self._prev_strip_var.set(self._format_prev_strip(prev))
-        # grid() is a no-op if already gridded; safe to call repeatedly.
-        self._prev_strip_lbl.grid()
-
-    def _refresh_prev_strip_time_only(self) -> None:
-        """Re-render just the "Xs ago" portion of the strip's label so
-        the elapsed-time indicator stays live without rebuilding state."""
-        if self._strip_scan is None:
-            return
-        self._prev_strip_var.set(self._format_prev_strip(self._strip_scan))
-
-    def _format_prev_strip(self, prev: _PrevScan) -> str:
-        parts = [self._format_ago(prev.ts), prev.headline]
-        if prev.edipi is not None:
-            parts.append(f"EDIPI {prev.edipi}")
-        if prev.detail:
-            parts.append(prev.detail)
-        return "  •  ".join(parts)
-
-    @staticmethod
-    def _format_ago(ts: datetime) -> str:
-        delta = datetime.now().astimezone() - ts
-        secs = max(0, int(delta.total_seconds()))
-        if secs < 60:
-            return f"{secs}s ago"
-        if secs < 3600:
-            m, s = divmod(secs, 60)
-            return f"{m}m {s}s ago"
-        h, rem = divmod(secs, 3600)
-        m, _ = divmod(rem, 60)
-        return f"{h}h {m}m ago"
 
     def _refresh_session_label(self) -> None:
         now = datetime.now().astimezone()
@@ -2188,14 +2054,14 @@ class App(tk.Tk):
         self._drinks_count_var.set(text)
 
     def _clear(self) -> None:
-        self.input_var.set("")
-        self._scan_queue.clear()
+        self._processing = True
+        try:
+            self.input_var.set("")
+        finally:
+            self._processing = False
         for var in self._values.values():
             var.set(self.PLACEHOLDER)
         self._last_decoded_edipi = None
-        self._prev_scan = None
-        self._strip_scan = None
-        self._prev_strip_lbl.grid_remove()
         self._reset_banner()
         self.entry.focus_set()
 
