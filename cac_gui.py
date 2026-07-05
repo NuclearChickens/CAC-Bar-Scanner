@@ -1959,7 +1959,9 @@ class App(tk.Tk):
                 )
                 # Bar-wide tally bumps on every allowed scan; deferred to
                 # after record_scan so the new row is included.
-                self._refresh_drinks_counter(now=now, window=window)
+                self._refresh_drinks_counter(
+                    now=now, window=window, effective_since=effective_since
+                )
             else:
                 self._values["count"].set(
                     f"{current_count} / {self.settings.max_drinks}"
@@ -1988,6 +1990,7 @@ class App(tk.Tk):
     def _refresh_session_label(self) -> None:
         now = datetime.now().astimezone()
         window = self.settings.current_window(now)
+        effective = self._effective_since(window[0]) if window is not None else None
 
         # Keep the per-scan count row label aligned with the mode.
         if self._count_label is not None:
@@ -2000,7 +2003,9 @@ class App(tk.Tk):
 
         # Keep the bottom-left drinks-served counter in sync with the
         # window/reset boundary as well.
-        self._refresh_drinks_counter(now=now, window=window)
+        self._refresh_drinks_counter(
+            now=now, window=window, effective_since=effective
+        )
 
         descr = self.settings.describe_window()
         if window is None:
@@ -2009,7 +2014,7 @@ class App(tk.Tk):
             return
 
         start, end = window
-        effective = self._effective_since(start)
+        assert effective is not None  # window is not None ⇒ effective is not None
         local_reset = effective.astimezone() if effective > start else None
         self.session_lbl.configure(foreground=GREEN)
         if self.settings.is_rolling:
@@ -2027,6 +2032,7 @@ class App(tk.Tk):
         self,
         now: datetime | None = None,
         window: tuple[datetime, datetime] | None = None,
+        effective_since: datetime | None = None,
     ) -> None:
         """Update the bottom-left tally to match the current window.
 
@@ -2043,7 +2049,8 @@ class App(tk.Tk):
         if window is None:
             self._drinks_count_var.set("Drinks served: 0  •  closed")
             return
-        effective_since = self._effective_since(window[0])
+        if effective_since is None:
+            effective_since = self._effective_since(window[0])
         total = count_total_since(effective_since, now)
         if self.settings.is_rolling:
             text = (
