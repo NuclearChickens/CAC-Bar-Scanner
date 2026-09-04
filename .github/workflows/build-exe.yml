@@ -1,0 +1,41 @@
+# Build BarScanner.exe on a real Windows runner.
+#
+# Manual trigger only (Actions tab → "Build BarScanner.exe" → Run
+# workflow, or `gh workflow run build-exe.yml`). The finished binary is
+# attached to the run as the "BarScanner-exe" artifact; download it and
+# commit it as BarScanner.exe at the repo root, which is what the
+# README's download link points at.
+name: Build BarScanner.exe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: Build
+        run: pyinstaller --clean --noconfirm BarScanner.spec
+
+      - name: Smoke-check the binary
+        shell: pwsh
+        run: |
+          $exe = "dist\BarScanner.exe"
+          if (-not (Test-Path $exe)) { throw "dist\BarScanner.exe missing" }
+          "size: $((Get-Item $exe).Length) bytes"
+          (Get-Item $exe).VersionInfo | Format-List ProductName, ProductVersion, FileVersion
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: BarScanner-exe
+          path: dist/BarScanner.exe
+          if-no-files-found: error

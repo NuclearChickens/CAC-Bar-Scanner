@@ -19,3 +19,8 @@ Thumbs.db
 *.swp
 .idea/
 .vscode/
+
+# PyInstaller output dir — the shipped binary is committed at the repo root
+dist/
+# Intermediate file written by build_guide_pdf.sh
+_guide_print.html
