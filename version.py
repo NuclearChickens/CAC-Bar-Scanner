@@ -18,7 +18,7 @@ from pathlib import Path
 
 
 APP_NAME        = "CAC Bar Scanner"
-APP_VERSION     = "1.0.0"
+APP_VERSION     = "1.1.0"
 APP_PUBLISHER   = "Jeremy Evans"
 APP_DESCRIPTION = "CAC barcode access control for bars / kiosks"
 APP_COPYRIGHT   = "Copyright (c) 2026 Jeremy Evans"

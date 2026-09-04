@@ -30,8 +30,10 @@ from tkinter import filedialog, messagebox, ttk
 
 import audit_log
 import backup
+import daily_log
 import reset_log
 import settings as settings_mod
+import sound
 import start_menu
 import version
 from cac_decoder import BRANCHES, BARCODE_LEN, CATEGORIES, InvalidBarcode, decode
@@ -43,6 +45,7 @@ BLACK = "#000000"
 WHITE = "#ffffff"
 GREEN = "#0a8a3a"
 RED = "#c0392b"
+PW_MASK = "•"             # character shown in place of password text
 LOCKED_BG = "#fce8e6"     # very light red for the locked banner
 UNLOCKED_BG = "#e6f4ea"   # very light green for the unlocked banner
 
@@ -1216,7 +1219,7 @@ class App(tk.Tk):
             dlg,
             textvariable=pw_var,
             font=self.F_ENTRY,
-            show="•",
+            show=PW_MASK,
             width=24,
         )
         entry.grid(
@@ -1268,6 +1271,13 @@ class App(tk.Tk):
         f = self._make_lockable_tab("Reset")
         f.rowconfigure(3, weight=1)
 
+        # Admin password first: on a new install setting it is the one
+        # job on this tab an operator has to do, and burying it under the
+        # reset controls made it easy to miss. Only reachable when
+        # unlocked, so whoever changes it has already proven they know
+        # the current one.
+        self._build_password_box(f, row=0)
+
         ttk.Label(
             f,
             text=(
@@ -1276,52 +1286,13 @@ class App(tk.Tk):
             ),
             font=self.F_BODY,
             justify="left",
-        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(12)))
+        ).grid(row=1, column=0, sticky="w", pady=(0, self._px(12)))
 
         ttk.Button(
             f,
             text="Reset drinks for the day",
             command=self._reset_drinks,
-        ).grid(row=1, column=0, sticky="w", pady=(0, self._px(20)))
-
-        # Admin password change — only reachable when unlocked, so the
-        # operator who can change the password has already proven they
-        # know the current one.
-        pw_frame = ttk.LabelFrame(
-            f, text="Change admin password", padding=self._px(14)
-        )
-        pw_frame.grid(row=2, column=0, sticky="ew", pady=(0, self._px(16)))
-        pw_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(pw_frame, text="New password:", font=self.F_LABEL).grid(
-            row=0, column=0, sticky="e", padx=(0, self._px(12)), pady=self._px(4)
-        )
-        self.new_pw_var = tk.StringVar()
-        ttk.Entry(
-            pw_frame,
-            textvariable=self.new_pw_var,
-            show="•",
-            width=24,
-            font=self.F_VALUE_BOLD,
-        ).grid(row=0, column=1, sticky="w", pady=self._px(4))
-
-        ttk.Label(pw_frame, text="Confirm:", font=self.F_LABEL).grid(
-            row=1, column=0, sticky="e", padx=(0, self._px(12)), pady=self._px(4)
-        )
-        self.confirm_pw_var = tk.StringVar()
-        ttk.Entry(
-            pw_frame,
-            textvariable=self.confirm_pw_var,
-            show="•",
-            width=24,
-            font=self.F_VALUE_BOLD,
-        ).grid(row=1, column=1, sticky="w", pady=self._px(4))
-
-        ttk.Button(
-            pw_frame,
-            text="Change password",
-            command=self._change_password,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(self._px(10), 0))
+        ).grid(row=2, column=0, sticky="w", pady=(0, self._px(20)))
 
         # Public reset log
         log_frame = ttk.LabelFrame(f, text="Public reset log", padding=self._px(14))
@@ -1343,6 +1314,132 @@ class App(tk.Tk):
         self.reset_log_box.configure(yscrollcommand=sb.set)
 
         self._refresh_reset_log()
+
+    def _build_password_box(self, parent: ttk.Frame, row: int) -> None:
+        """Build the admin-password box: new + confirm fields, a
+        show-password toggle, and a hint line directly under them.
+
+        The hint updates on every keystroke, so a too-short or
+        mismatched password shows up right under the fields instead of
+        only after a button press, in the footer status line at the far
+        end of a maximized window."""
+        box = ttk.LabelFrame(
+            parent, text="Admin password", padding=self._px(14)
+        )
+        box.grid(row=row, column=0, sticky="ew", pady=(0, self._px(20)))
+        box.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            box,
+            text=(
+                "Unlocks the settings tabs, the manual reset, and backup "
+                "import.\n"
+                f"At least {settings_mod.MIN_PASSWORD_LEN} characters. "
+                "Takes effect immediately — the old password stops working."
+            ),
+            font=self.F_BODY,
+            justify="left",
+        ).grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, self._px(10))
+        )
+
+        self.new_pw_var = tk.StringVar()
+        self.confirm_pw_var = tk.StringVar()
+        self._pw_entries: list[ttk.Entry] = []
+
+        fields = (
+            ("New password:", self.new_pw_var),
+            ("Confirm:", self.confirm_pw_var),
+        )
+        for i, (label, var) in enumerate(fields):
+            ttk.Label(box, text=label, font=self.F_LABEL).grid(
+                row=1 + i,
+                column=0,
+                sticky="e",
+                padx=(0, self._px(12)),
+                pady=self._px(4),
+            )
+            entry = ttk.Entry(
+                box,
+                textvariable=var,
+                show=PW_MASK,
+                width=24,
+                font=self.F_VALUE_BOLD,
+            )
+            entry.grid(row=1 + i, column=1, sticky="w", pady=self._px(4))
+            # Enter from either field saves, matching the unlock dialog.
+            entry.bind("<Return>", self._change_password_event)
+            self._pw_entries.append(entry)
+
+        self.show_pw_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            box,
+            text="Show password",
+            variable=self.show_pw_var,
+            command=self._toggle_password_visibility,
+        ).grid(row=3, column=1, sticky="w", pady=(self._px(4), 0))
+
+        self.pw_hint_var = tk.StringVar(value="")
+        self.pw_hint_lbl = tk.Label(
+            box, textvariable=self.pw_hint_var, font=self.F_BODY, anchor="w"
+        )
+        self.pw_hint_lbl.grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(self._px(8), 0)
+        )
+
+        ttk.Button(
+            box,
+            text="Save password",
+            command=self._change_password,
+        ).grid(
+            row=5, column=0, columnspan=2, sticky="w", pady=(self._px(10), 0)
+        )
+
+        for var in (self.new_pw_var, self.confirm_pw_var):
+            var.trace_add("write", self._refresh_password_hint)
+        self._refresh_password_hint()
+
+    def _toggle_password_visibility(self) -> None:
+        """Reveal or re-mask both password fields together. Typing a
+        password blind twice is the usual way a kiosk operator ends up
+        locked out by a typo they can't see."""
+        show = "" if self.show_pw_var.get() else PW_MASK
+        for entry in self._pw_entries:
+            entry.configure(show=show)
+
+    def _password_problem(self) -> str:
+        """Return why the entered password can't be saved yet, or "" if
+        it's ready. Single source of truth for the live hint and the
+        save button so the two can never disagree."""
+        new = self.new_pw_var.get()
+        confirm = self.confirm_pw_var.get()
+        if not new:
+            return "Enter a new password."
+        if len(new) < settings_mod.MIN_PASSWORD_LEN:
+            missing = settings_mod.MIN_PASSWORD_LEN - len(new)
+            return (
+                f"Too short — {missing} more "
+                f"character{'' if missing == 1 else 's'} needed."
+            )
+        if not confirm:
+            return "Type it again in Confirm."
+        if new != confirm:
+            return "The two passwords don't match."
+        return ""
+
+    def _refresh_password_hint(self, *_args: object) -> None:
+        """Repaint the hint line under the password fields."""
+        problem = self._password_problem()
+        if problem and not (self.new_pw_var.get() or self.confirm_pw_var.get()):
+            # Nothing typed yet — stay quiet rather than scolding.
+            self.pw_hint_var.set("")
+            return
+        if problem:
+            self.pw_hint_lbl.configure(fg=RED)
+            self.pw_hint_var.set(problem)
+        else:
+            self.pw_hint_lbl.configure(fg=GREEN)
+            self.pw_hint_var.set("Ready — click Save password.")
 
     def _refresh_reset_log(self) -> None:
         self.reset_log_box.delete(0, "end")
@@ -1383,6 +1480,11 @@ class App(tk.Tk):
         self._refresh_logs()
         self._set_status("Drinks reset.", ok=True)
 
+    def _change_password_event(self, _event: tk.Event) -> str:
+        """<Return> binding for the password fields."""
+        self._change_password()
+        return "break"
+
     def _change_password(self) -> None:
         """Replace the stored admin-password hash. Both new + confirm
         fields must match and clear the minimum length floor."""
@@ -1391,21 +1493,16 @@ class App(tk.Tk):
                 "Settings must be unlocked to change the password.", ok=False
             )
             return
-        new = self.new_pw_var.get()
-        confirm = self.confirm_pw_var.get()
-        if not new:
-            self._set_status("Enter a new password.", ok=False)
+        problem = self._password_problem()
+        if problem:
+            # Report next to the fields as well as in the footer — the
+            # footer is off at the bottom of a maximized window.
+            self.pw_hint_lbl.configure(fg=RED)
+            self.pw_hint_var.set(problem)
+            self._pw_entries[0].focus_set()
+            self._set_status(problem, ok=False)
             return
-        if len(new) < settings_mod.MIN_PASSWORD_LEN:
-            self._set_status(
-                f"Password must be at least {settings_mod.MIN_PASSWORD_LEN} characters.",
-                ok=False,
-            )
-            return
-        if new != confirm:
-            self._set_status("Passwords do not match.", ok=False)
-            return
-        new_settings = self.settings.with_admin_password(new)
+        new_settings = self.settings.with_admin_password(self.new_pw_var.get())
         settings_mod.save(new_settings)
         self.settings = new_settings
         # Realign the diff baseline so a subsequent lock doesn't try to
@@ -1413,6 +1510,11 @@ class App(tk.Tk):
         self._pre_edit_settings = new_settings
         self.new_pw_var.set("")
         self.confirm_pw_var.set("")
+        # Don't leave the next operator's typing revealed.
+        self.show_pw_var.set(False)
+        self._toggle_password_visibility()
+        self.pw_hint_lbl.configure(fg=GREEN)
+        self.pw_hint_var.set("Saved. Use the new password from now on.")
         audit_log.record_change("admin password changed")
         self._refresh_logs()
         self._set_status("Admin password changed.", ok=True)
@@ -1454,6 +1556,7 @@ class App(tk.Tk):
         sb.grid(row=0, column=1, sticky="ns")
         self.logs_box.configure(yscrollcommand=sb.set)
 
+        self._build_daily_logs_section(f, row=3)
         self._refresh_logs()
 
     def _refresh_logs(self) -> None:
@@ -1498,6 +1601,67 @@ class App(tk.Tk):
             else:
                 line = f"  {when}  {action:<7}  by {by_str}"
             self.logs_box.insert("end", line)
+
+    def _build_daily_logs_section(self, parent: ttk.Frame, row: int) -> None:
+        """Read-only per-day CSV logs of every scan, with buttons that
+        open the folder tree (year/month) or today's file directly."""
+        box = ttk.LabelFrame(parent, text="Daily scan logs", padding=self._px(14))
+        box.grid(row=row, column=0, sticky="ew", pady=(self._px(14), 0))
+        box.columnconfigure(0, weight=1)
+
+        ttk.Label(
+            box,
+            text=(
+                "Every scan — allowed, denied, and invalid — is written to a\n"
+                "read-only file for that day, filed by year and month under:\n"
+                f"    {daily_log.DAILY_DIR}"
+            ),
+            font=self.F_BODY,
+            justify="left",
+        ).grid(row=0, column=0, sticky="w", pady=(0, self._px(10)))
+
+        btns = ttk.Frame(box)
+        btns.grid(row=1, column=0, sticky="w")
+        ttk.Button(
+            btns, text="Open daily logs folder", command=self._on_open_daily_logs
+        ).pack(side="left")
+        ttk.Button(
+            btns, text="Open today's log", command=self._on_open_todays_log
+        ).pack(side="left", padx=(self._px(8), 0))
+
+    def _on_open_daily_logs(self) -> None:
+        try:
+            daily_log.open_folder()
+        except OSError as e:
+            self._set_status(f"Couldn't open folder: {e}", ok=False)
+
+    def _on_open_todays_log(self) -> None:
+        path = daily_log.today_file()
+        if not path.exists():
+            self._set_status("No scans have been logged yet today.", ok=False)
+            return
+        try:
+            daily_log.open_folder(path)
+        except OSError as e:
+            self._set_status(f"Couldn't open {path.name}: {e}", ok=False)
+
+    def _log_daily(
+        self,
+        verdict: str,
+        edipi: str,
+        category: str,
+        branch: str,
+        detail: str,
+        drinks: str,
+        when: datetime | None = None,
+    ) -> None:
+        """Append to the day's CSV. Never lets a logging failure break
+        the scan pipeline — the verdict already stands — but does say so
+        in the footer so a full disk or locked file gets noticed."""
+        try:
+            daily_log.record(verdict, edipi, category, branch, detail, drinks, when)
+        except OSError as e:
+            self._set_status(f"Daily log not written: {e}", ok=False)
 
     # ------------------------------------------------------- Backup tab
 
@@ -1999,6 +2163,9 @@ class App(tk.Tk):
                 prune_before(effective_since)  # type: ignore[arg-type]
                 shown_count = verdict.new_count
                 self._values["count"].set(f"{shown_count} / {self.settings.max_drinks}")
+                # After record_scan, so the bell keeps the same promise the
+                # green banner makes: the drink is already on disk.
+                sound.play_allowed()
                 self._set_banner(
                     GREEN,
                     f"ALLOWED — {settings_mod.ordinal(shown_count)} drink",
@@ -2006,21 +2173,43 @@ class App(tk.Tk):
                     count=shown_count,
                     max_count=self.settings.max_drinks,
                 )
-                # Bar-wide tally bumps on every allowed scan; deferred to
-                # after record_scan so the new row is included.
+                # Bar-wide tally bumps on every allowed scan. Deferred to
+                # after record_scan so the new row is included, and
+                # deliberately NOT passed the `now` captured above: the
+                # row's timestamp is later than that, so a count bounded
+                # by the stale `now` would exclude it and lag one behind.
                 self._refresh_drinks_counter(
-                    now=now, window=window, effective_since=effective_since
+                    window=window, effective_since=effective_since
+                )
+                self._log_daily(
+                    daily_log.VERDICT_ALLOWED,
+                    decoded.edipi,
+                    f"{decoded.category_code} - {decoded.category}",
+                    f"{decoded.branch_code} - {decoded.branch}",
+                    f"{settings_mod.ordinal(shown_count)} drink",
+                    f"{shown_count} / {self.settings.max_drinks}",
+                    when=now,
                 )
             else:
                 self._values["count"].set(
                     f"{current_count} / {self.settings.max_drinks}"
                 )
+                sound.play_denied()
                 self._set_banner(
                     RED,
                     "DENIED",
                     verdict.reason,
                     count=current_count,
                     max_count=self.settings.max_drinks,
+                )
+                self._log_daily(
+                    daily_log.VERDICT_DENIED,
+                    decoded.edipi,
+                    f"{decoded.category_code} - {decoded.category}",
+                    f"{decoded.branch_code} - {decoded.branch}",
+                    verdict.reason,
+                    f"{current_count} / {self.settings.max_drinks}",
+                    when=now,
                 )
         finally:
             self._processing = False
@@ -2030,7 +2219,12 @@ class App(tk.Tk):
         for var in self._values.values():
             var.set(self.PLACEHOLDER)
         self._last_decoded_edipi = None
+        # An unreadable badge gets the buzzer too. A silent failure reads
+        # as "the scanner didn't fire" and gets re-scanned instead of
+        # handled.
+        sound.play_denied()
         self._set_banner(RED, "INVALID SCAN", f"{raw!r}: {msg}")
+        self._log_daily(daily_log.VERDICT_INVALID, "", "", "", f"{raw!r}: {msg}", "")
 
     def _set_banner(
         self,

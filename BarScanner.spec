@@ -9,6 +9,7 @@ import os
 
 ROOT = SPECPATH
 ICON = os.path.join(ROOT, 'icon.ico')
+SOUNDS = os.path.join(ROOT, 'sounds')
 VERSION_FILE = os.path.join(ROOT, 'icon_assets', 'version_info.txt')
 
 
@@ -16,11 +17,12 @@ a = Analysis(
     [os.path.join(ROOT, 'cac_gui.py')],
     pathex=[ROOT],
     binaries=[],
-    # Ship icon.ico inside the onefile exe so the runtime can find it
-    # via sys._MEIPASS (see _resource_path in cac_gui.py). The same
-    # icon.ico is also embedded as the exe's File Explorer icon via
-    # the EXE(icon=...) line below — separate concern.
-    datas=[(ICON, '.')],
+    # Ship icon.ico and the verdict .wav files inside the onefile exe
+    # so the runtime can find them via sys._MEIPASS (see _resource_path
+    # in cac_gui.py and sound.py). The same icon.ico is also embedded as
+    # the exe's File Explorer icon via the EXE(icon=...) line below —
+    # separate concern.
+    datas=[(ICON, '.'), (SOUNDS, 'sounds')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

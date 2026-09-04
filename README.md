@@ -2,7 +2,7 @@
 
 Tkinter GUI that reads CAC Code 39 barcodes from a USB scanner, decodes them,
 and enforces per-user/per-day access policy (hours, daily limits, roster,
-banned list). Designed for kiosk-style use on Windows; runs the same on
+banned list). Every scan is also written to a read-only per-day CSV log. Designed for kiosk-style use on Windows; runs the same on
 Linux/macOS from source.
 
 The repo ships both the source and a prebuilt `BarScanner.exe` so you can
@@ -67,6 +67,27 @@ the GUI has no third-party deps, so PyInstaller is the only pip install
 required. Tk ships with the standard python.org installer, so there's
 nothing extra to add for the GUI itself.
 
+### Regenerating the verdict sounds
+
+`sounds/allowed.wav` (bell) and `sounds/denied.wav` (buzzer) are
+synthesized by `make_sounds.py` using nothing but `wave` and `math`, so
+there's no audio toolchain to install. Edit the parameters at the top of
+each function, run `python3 make_sounds.py`, and commit the regenerated
+files. On Windows playback uses stdlib `winsound`; on Linux/macOS it
+shells out to whichever of `paplay`/`pw-play`/`aplay`/`afplay` exists.
+Missing files, missing players, and machines with no sound card all
+degrade to a silent scanner rather than an error.
+
+### Regenerating the user manual
+
+`GUIDE.md` is the source. `./build_guide_pdf.sh` renders it to
+`GUIDE.pdf` through headless Chromium (needs `python-markdown`,
+`chromium`, and an emoji font). The screenshots in `guide_images/` come
+from `./build_guide_images.sh`, which runs the real GUI under a virtual
+X display and grabs every state the manual shows; re-run it after any
+visible UI change, then rebuild the PDF. It needs Xvfb (fetched via
+`nix` automatically if not installed), Pillow, and ImageMagick.
+
 ### Regenerating the icon
 
 `icon.ico` at the repo root is the multi-resolution icon embedded in
@@ -85,12 +106,18 @@ the exe.
 | `scan_log.py`    | Per-scan record + count-since-date queries            |
 | `audit_log.py`   | Append-only audit trail of admin actions              |
 | `reset_log.py`   | Periodic log rollover                                 |
+| `daily_log.py`   | Read-only per-day CSV of every scan (allowed, denied, invalid) in `daily_logs/YYYY/MM/` |
+| `sound.py`       | Verdict sounds — bell on ALLOWED, buzzer on DENIED/INVALID |
 | `backup.py`      | Settings + log backup/restore                         |
 | `start_menu.py`  | Install/uninstall (Program Files copy, ACL, shortcut, registry) |
 | `version.py`     | App name/version/AUMID — single source of truth       |
 | `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon + version) |
 | `icon.ico`       | Multi-res Windows icon embedded in the exe            |
 | `icon_assets/`   | SVG icon source, rebuild script, version-info file    |
-| `GUIDE.md`       | Tab-by-tab user guide for non-technical operators     |
-| `GUIDE.pdf`      | Printable PDF of the same guide                       |
-| `build_guide_pdf.sh` | Regenerates `GUIDE.pdf` from `GUIDE.md`           |
+| `GUIDE.md`       | Full user manual: install, setup, daily use, every tab, troubleshooting |
+| `GUIDE.pdf`      | Printable PDF of the same manual                      |
+| `guide_images/`  | Screenshots embedded in the manual, plus `capture.py` that regenerates them |
+| `build_guide_images.sh` | Regenerates `guide_images/*.png` by driving the GUI under Xvfb |
+| `build_guide_pdf.sh` | Regenerates `GUIDE.pdf` from `GUIDE.md` + `guide_images/` |
+| `sounds/`        | `allowed.wav` / `denied.wav`, bundled into the exe    |
+| `make_sounds.py` | Regenerates `sounds/*.wav` (stdlib synthesis, no deps) |
