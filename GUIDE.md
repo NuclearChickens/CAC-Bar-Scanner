@@ -309,8 +309,8 @@ Every step is explained in detail later in the manual.
    on the pink banner. The default password is `admin`.
    → [Part 5](#5-locking-and-unlocking-settings)
 3. **Set a new admin password** right away on the **Reset** tab.
-   Write it somewhere safe; recovering a lost password needs
-   administrator access to the PC.
+   Write it somewhere safe; recovering a lost password needs someone
+   who can approve a Windows administrator prompt on the PC.
    → [Section 10.1](#101-setting-the-admin-password)
 4. **Set the hours.** On the **Hours** tab pick a counting mode and
    enter your opening and closing times. Do this *before* opening,
@@ -352,8 +352,10 @@ The window opens maximized. Press **F11** to make it fill the whole
 screen with no title bar (kiosk mode). Press **Esc** or **F11** again
 to go back.
 
-If the app is already running, click it on the taskbar instead of
-opening a second copy.
+Only one copy can run at a time. If the app is already open and you
+launch it again, the window that is already running simply comes to
+the front. (If it is open under a *different* Windows account, a
+message tells you so; switch to that account or close it there.)
 
 ### 4.2 The Scanner screen, piece by piece
 
@@ -618,8 +620,33 @@ fix it.
 
 ### 5.7 Recovering a lost password
 
-If nobody knows the admin password, someone with **administrator
-rights on the Windows PC** can reset it to `admin`:
+If nobody knows the admin password, someone who can approve a Windows
+**User Account Control** prompt on the PC can reset it to `admin` from
+inside the app. Nothing else changes: hours, limit, roster, bans, and
+logs are all kept.
+
+1. Click **Unlock** on any pink banner to open the **Unlock settings**
+   popup.
+2. Click **Forgot password…**
+3. A popup asks you to confirm the reset. Click **Yes**.
+4. Windows shows the blue **User Account Control** box. Click **Yes**.
+   (If the box asks for an administrator's username and password, that
+   is Windows asking, not the app; a PC administrator has to enter
+   theirs.)
+5. The popup now says the password is `admin`. Type `admin`, press
+   **Enter**, and set a new password straight away on the
+   [Reset tab](#101-setting-the-admin-password).
+
+The reset is written to the Logs tab as **admin password reset to
+default by a Windows administrator**, so it is never invisible.
+
+If you click **No** on the User Account Control box, nothing happens
+and the status bar says **Password reset cancelled.**
+
+#### If the app cannot be opened at all
+
+The same reset can be done by hand by editing the settings file. Only
+use this when the method above is impossible.
 
 1. Close CAC Bar Scanner.
 2. Open Notepad **as administrator** (right-click Notepad → **Run as
@@ -935,10 +962,10 @@ password. The Logs tab records **admin password changed** without the
 password itself, which is never written anywhere in readable form.
 
 > [!WARNING]
-> Write the new password down somewhere safe. If it is lost, the only
-> way back in is the file edit in
-> [Section 5.7](#57-recovering-a-lost-password), which needs Windows
-> administrator rights.
+> Write the new password down somewhere safe. If it is lost, the way
+> back in is **Forgot password…** in the Unlock popup
+> ([Section 5.7](#57-recovering-a-lost-password)), which needs a
+> Windows administrator to approve the reset.
 
 ### 10.2 Resetting drink counts
 
@@ -999,6 +1026,7 @@ details.
 | `2026-09-04 20:01  CHANGE   category disabled: E, O   (by admin)` | Roster boxes were unticked (or `enabled` for ticked).                             |
 | `2026-09-04 20:02  CHANGE   ban added: 1234567890 (permanent)   (by admin)` | A ban was added (or `ban removed: …`).                                  |
 | `2026-09-04 20:02  CHANGE   admin password changed   (by admin)`  | The password was changed.                                                         |
+| `2026-09-04 20:05  CHANGE   admin password reset to default by a Windows administrator   (by admin)` | **Forgot password…** was used; the password is `admin` again. |
 | `2026-09-04 20:03  LOCK     by admin`                             | Settings were locked, by hand, by the timer, or by closing the app.               |
 | `2026-09-04 20:15  RESET    by admin`                             | Drink counts were reset.                                                          |
 | `2026-09-04 23:30  EXPORT   cac_scanner_backup_2026-09-04.zip`    | A backup was exported (no password needed, so no "by admin").                     |
@@ -1333,7 +1361,7 @@ password recovery in [Section 5.7](#57-recovering-a-lost-password).
 | Problem                                                          | Likely cause and fix                                                                                                                       |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | All the controls on a tab are grey                               | The settings are locked. Click **Unlock** on the pink banner.                                                                              |
-| **Incorrect password.**                                          | Check Caps Lock. If the password was changed and nobody knows it, see [Section 5.7](#57-recovering-a-lost-password).                      |
+| **Incorrect password.**                                          | Check Caps Lock. If nobody knows the password, click **Forgot password…** in the Unlock popup; see [Section 5.7](#57-recovering-a-lost-password). |
 | Controls went grey while I was editing                           | The five-minute auto-lock. Your changes so far are saved. Unlock again.                                                                    |
 | Red **Invalid time** in the status bar                           | An Hours field is incomplete or malformed. Use 24-hour `HH:MM`, e.g. `17:00`.                                                              |
 | **Rolling hours must be between 1 and 168**                      | Type a number in that range.                                                                                                               |
@@ -1351,7 +1379,8 @@ password recovery in [Section 5.7](#57-recovering-a-lost-password).
 | Install prompt never appeared                                    | Someone already installed it, or clicked **Not now** on this account. Use **Backup → PC install** to install or check the state.                          |
 | Typing "Bar" in the Start menu finds nothing                     | Windows Search has not indexed the new shortcut yet. Wait a minute. Or **Backup → Open Start menu folder** and double-click the shortcut there.           |
 | **Install failed at: …** popup                                   | Note the step named. Right-click `BarScanner.exe` → **Run as administrator** and try again. See [Section 2.8](#28-if-the-install-fails).                  |
-| Two copies of the app are open                                   | Close one with **Ctrl + Q**. Both read the same data folder, so nothing is lost, but only scan on one.                                                    |
+| Launching the app just brings up a window that was already open  | Expected. Only one copy runs at a time so drink counts stay correct.                                                                                     |
+| **CAC Bar Scanner is already running** message on launch         | The app is open under another Windows account on this PC. Switch to that account and use it there, or close it there first.                              |
 | The window is small or not fullscreen                            | Press **F11**. The app opens maximized on Windows; F11 removes the title bar as well.                                                                     |
 | Program Files folder still there after uninstall                 | It is deleted on the next reboot. Restart the PC.                                                                                                         |
 | Settings or scans do not save when a different Windows account is logged in | The app was run without installing, so the data folder belongs to one account. Install for the PC from **Backup → PC install**, which fixes the folder permissions. |
@@ -1370,6 +1399,7 @@ password recovery in [Section 5.7](#57-recovering-a-lost-password).
 | **Enter**      | Banned tab fields | Add the ban                                                         |
 | **Enter**      | Password fields   | Save the new password                                               |
 | **Esc**        | Install prompt    | Same as **Not now**                                                 |
+| **Ctrl + Q**   | Anywhere          | Quit. Launching again later reopens a single copy.                  |
 
 ---
 

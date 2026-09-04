@@ -109,7 +109,9 @@ the exe.
 | `daily_log.py`   | Read-only per-day CSV of every scan (allowed, denied, invalid) in `daily_logs/YYYY/MM/` |
 | `sound.py`       | Verdict sounds — bell on ALLOWED, buzzer on DENIED/INVALID |
 | `backup.py`      | Settings + log backup/restore                         |
-| `start_menu.py`  | Install/uninstall (Program Files copy, ACL, shortcut, registry) |
+| `start_menu.py`  | Install/uninstall (Program Files copy, ACL, shortcut, registry) + UAC-gated admin-password reset |
+| `single_instance.py` | One-copy-per-PC guard (Global named mutex on Windows, flock elsewhere) |
+| `tests/`         | `unittest` suite, run by the build workflow on the Windows runner |
 | `version.py`     | App name/version/AUMID — single source of truth       |
 | `BarScanner.spec`| PyInstaller spec (single-file, windowed, icon + version) |
 | `icon.ico`       | Multi-res Windows icon embedded in the exe            |

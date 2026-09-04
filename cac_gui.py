@@ -33,6 +33,7 @@ import backup
 import daily_log
 import reset_log
 import settings as settings_mod
+import single_instance
 import sound
 import start_menu
 import version
@@ -156,6 +157,9 @@ def _parse_expires_input(s: str) -> tuple[str | None, str | None]:
 # ================================================================== App
 
 
+WINDOW_TITLE = "CAC Barcode Scanner"
+
+
 class App(tk.Tk):
     PLACEHOLDER = "—"
     REFRESH_MS = 60_000
@@ -163,7 +167,7 @@ class App(tk.Tk):
 
     def __init__(self) -> None:
         super().__init__()
-        self.title("CAC Barcode Scanner")
+        self.title(WINDOW_TITLE)
         _set_window_icon(self)
 
         # Scaling: must come before fonts/styles/geometry — they all depend
@@ -1227,9 +1231,10 @@ class App(tk.Tk):
         )
 
         err_var = tk.StringVar(value="")
-        tk.Label(
+        err_lbl = tk.Label(
             dlg, textvariable=err_var, font=self.F_BODY, fg=RED
-        ).grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, self._px(8)))
+        )
+        err_lbl.grid(row=3, column=0, columnspan=2, sticky="w", pady=(0, self._px(8)))
 
         def submit(_event: tk.Event | None = None) -> str:
             pw = pw_var.get()
@@ -1254,16 +1259,71 @@ class App(tk.Tk):
             dlg.destroy()
             return "break"
 
+        def forgot() -> None:
+            if self._reset_admin_password(parent=dlg):
+                err_lbl.configure(fg=GREEN)
+                err_var.set(
+                    f"Password reset to \"{settings_mod.DEFAULT_ADMIN_PASSWORD}\". "
+                    "Type it above, then set a new one on the Reset tab."
+                )
+                pw_var.set("")
+                entry.focus_set()
+
         btns = ttk.Frame(dlg)
-        btns.grid(row=4, column=0, columnspan=2, sticky="w")
-        ttk.Button(btns, text="Unlock", command=submit).pack(side="left")
-        ttk.Button(btns, text="Cancel", command=dlg.destroy).pack(
-            side="left", padx=(self._px(8), 0)
+        btns.grid(row=4, column=0, columnspan=2, sticky="ew")
+        btns.columnconfigure(2, weight=1)
+        ttk.Button(btns, text="Unlock", command=submit).grid(row=0, column=0)
+        ttk.Button(btns, text="Cancel", command=dlg.destroy).grid(
+            row=0, column=1, padx=(self._px(8), 0)
+        )
+        ttk.Button(btns, text="Forgot password…", command=forgot).grid(
+            row=0, column=3, sticky="e", padx=(self._px(24), 0)
         )
 
         dlg.grab_set()
         entry.focus_set()
         entry.bind("<Return>", submit)
+
+    def _reset_admin_password(self, parent: tk.Misc) -> bool:
+        """Forgot-password flow. Confirms, then asks Windows for
+        administrator approval (UAC) and resets the password to the
+        default. Returns True if the password was reset."""
+        if not messagebox.askyesno(
+            "Reset admin password",
+            (
+                f"Reset the admin password back to "
+                f"\"{settings_mod.DEFAULT_ADMIN_PASSWORD}\"?\n\n"
+                "Windows will ask for administrator approval. The reset is "
+                "recorded in the Logs tab. All other settings are kept."
+            ),
+            parent=parent,
+        ):
+            return False
+        res = start_menu.reset_admin_password_elevated()
+        if res == start_menu.InstallResult.UNSUPPORTED:
+            # Source-tree run on Linux/macOS: no UAC to gate on, so just
+            # do it — this path never ships to the kiosk.
+            settings_mod.reset_admin_password()
+            audit_log.record_change("admin password reset to default")
+            res = start_menu.InstallResult.OK
+        if res == start_menu.InstallResult.OK:
+            # Pick up the cleared hash so a later settings save doesn't
+            # write the old one back.
+            self.settings = settings_mod.load()
+            self._refresh_logs()
+            self._set_status(
+                f"Admin password reset to \"{settings_mod.DEFAULT_ADMIN_PASSWORD}\".",
+                ok=True,
+            )
+            return True
+        if res == start_menu.InstallResult.CANCELLED:
+            self._set_status("Password reset cancelled.", ok=False)
+        else:
+            self._set_status(
+                "Password reset failed — see the popup from the elevated step.",
+                ok=False,
+            )
+        return False
 
     # -------------------------------------------------------- Reset tab
 
@@ -2463,6 +2523,15 @@ def main() -> None:
     # Elevated child writing the install (Program Files copy + ACL +
     # shortcut + registry).
     if start_menu.handle_elevated_install_cli():
+        return
+    # Elevated child clearing the admin password (Forgot password… flow).
+    if start_menu.handle_reset_password_cli():
+        return
+    # One copy per PC: a second launch surfaces the running window instead
+    # of starting another instance that would fight over the scan log.
+    if not single_instance.acquire():
+        if not single_instance.bring_existing_to_front(WINDOW_TITLE):
+            single_instance.show_already_running_message()
         return
     _enable_windows_dpi_awareness()
     App().mainloop()

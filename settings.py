@@ -411,6 +411,13 @@ def load() -> Settings:
         return defaults
 
 
+def reset_admin_password() -> None:
+    """Clear the stored hash so the default password is accepted again.
+    Every other setting is preserved. Used by the elevated
+    ``--reset-admin-password`` flow (see start_menu)."""
+    save(dataclasses.replace(load(), admin_password_hash=""))
+
+
 def save(settings: Settings) -> None:
     SETTINGS_DIR.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")

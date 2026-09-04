@@ -48,6 +48,7 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 
+import audit_log
 import settings as settings_mod
 import version
 
@@ -59,6 +60,7 @@ SHORTCUT_FILENAME = f"{APP_NAME}.lnk"
 ELEVATED_INSTALL_FLAG = "--install-for-machine"
 UNINSTALL_FLAG = "--uninstall"
 PURGE_DATA_FLAG = "--purge-data"
+RESET_PASSWORD_FLAG = "--reset-admin-password"
 
 # HKLM key Windows reads for Add/Remove Programs and the Start menu
 # right-click → Uninstall action.
@@ -236,6 +238,52 @@ def uninstall_for_machine(purge_data: bool) -> InstallResult:
     if purge_data:
         flags += " " + PURGE_DATA_FLAG
     return _spawn_elevated(flags)
+
+
+# ---------------------------------------------------------------- password reset
+
+def reset_admin_password_elevated() -> InstallResult:
+    """Reset the admin password to the default, gated by a UAC prompt.
+
+    Anyone who can approve UAC on the kiosk could already edit
+    settings.json by hand; this just makes that path safe (no JSON
+    editing) and audited. Re-spawns the exe elevated with
+    ``--reset-admin-password`` unless we're already elevated."""
+    if sys.platform != "win32":
+        return InstallResult.UNSUPPORTED
+    if is_elevated():
+        try:
+            _do_reset_admin_password()
+            return InstallResult.OK
+        except Exception:
+            return InstallResult.FAILED
+    return _spawn_elevated(RESET_PASSWORD_FLAG)
+
+
+def _do_reset_admin_password() -> None:
+    settings_mod.reset_admin_password()
+    audit_log.record_change(
+        "admin password reset to default by a Windows administrator"
+    )
+
+
+def handle_reset_password_cli() -> bool:
+    """If spawned with ``--reset-admin-password``: perform the reset
+    (elevating first if needed) and exit. Returns False when the flag
+    isn't present so main() continues to the GUI."""
+    if RESET_PASSWORD_FLAG not in sys.argv:
+        return False
+    if is_elevated():
+        try:
+            _do_reset_admin_password()
+            sys.exit(0)
+        except Exception as e:
+            _show_install_error_dialog(
+                f"The admin password could not be reset:\n\n{e}"
+            )
+            sys.exit(1)
+    res = reset_admin_password_elevated()
+    sys.exit(0 if res == InstallResult.OK else 1)
 
 
 # ---------------------------------------------------------------- the install
